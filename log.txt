@@ -1,0 +1,119 @@
+Trying to open file at: C:\Users\yohan\Documents\ISLES-222\ISLES-222\sub-strokecase1\ses-1\dwi\sub-strokecase1_ses-1_adc.nii\sub-strokeperf41_ses-218528_ornt-2iso_skull-stripped_sequ-36_adc.nii
+HEADER METADATA
+Data type: 64
+Number of Dimensions: 3
+X: 112
+Y: 112
+Z: 73
+pixX: -1.
+pixY: 2.
+pixZ: 2.
+bit per voxel: 64
+Voxel offset: 352.
+scl_slope: 1.
+scl_inter: .
+Q Transform Code: 2
+S Transform Code: 1
+Quaternion offset X: 11.21332
+Quaternion offset Y: -111.7814
+Quaternion offset Z: -52.73753
+Quaternion Coeff. b: .1538
+Quaternion Coeff. c: -.999496
+Quaternion Coeff. d: -.19394
+Intent Name: 
+Intent P1: .
+Intent P2: .
+Intent P3: .
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+Total size: 915712
+Scaling.
+Scaling finished.
+Data is of type Double. Converting to float.
+Conversion to float complete.
+Converting to 3D.
+Conversion to 3D complete. Ready for Normalisation.
+Normalising.
+Normalisation Finished. Inserting to gridChannels as channel.
+Insertion complete.
+Completed reading ADC.
+Trying to open file at: C:\Users\yohan\Documents\ISLES-222\ISLES-222\sub-strokecase1\ses-1\dwi\sub-strokecase1_ses-1_dwi.nii\sub-strokeperf41_ses-218528_ornt-2iso_skull-stripped_sequ-37_dwi.nii
+HEADER METADATA
+Data type: 64
+Number of Dimensions: 3
+X: 112
+Y: 112
+Z: 73
+pixX: -1.
+pixY: 2.
+pixZ: 2.
+bit per voxel: 64
+Voxel offset: 352.
+scl_slope: 1.
+scl_inter: .
+Q Transform Code: 2
+S Transform Code: 1
+Quaternion offset X: 11.21332
+Quaternion offset Y: -111.7814
+Quaternion offset Z: -52.73753
+Quaternion Coeff. b: .1538
+Quaternion Coeff. c: -.999496
+Quaternion Coeff. d: -.19394
+Intent Name: 
+Intent P1: .
+Intent P2: .
+Intent P3: .
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+Total size: 915712
+Scaling.
+Scaling finished.
+Data is of type Double. Converting to float.
+Conversion to float complete.
+Converting to 3D.
+Conversion to 3D complete. Ready for Normalisation.
+Normalising.
+Normalisation Finished. Inserting to gridChannels as channel.
+Insertion complete.
+Completed reading DWI.
+Trying to open file at: C:\Users\yohan\Documents\ISLES-222\ISLES-222\sub-strokecase1\ses-1\anat\sub-strokecase1_ses-1_FLAIR.nii\sub-strokecase1_ses-1_FLAIR.nii
+HEADER METADATA
+Data type: 16
+Number of Dimensions: 3
+X: 281
+Y: 352
+Z: 352
+pixX: 1.
+pixY: .711532
+pixZ: .71227
+bit per voxel: 32
+Voxel offset: 352.
+scl_slope: 1.
+scl_inter: .
+Q Transform Code: 1
+S Transform Code: 1
+Quaternion offset X: -13.45311
+Quaternion offset Y: -131.919968
+Quaternion offset Z: -119.347351
+Quaternion Coeff. b: .16924
+Quaternion Coeff. c: .25539
+Quaternion Coeff. d: .14329
+Intent Name: 
+Intent P1: .
+Intent P2: .
+Intent P3: .
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+Resample to Size (112, 112, 73).
+Total size: 3481724
+Scaling.
+Scaling finished.
+3481724
+Converting to 3D.
+Convert finished. Ready for Normalisation.
+Normalising.
+Normalisation Finished. Inserting to gridChannels as channel.
+Insertion complete.
+Completed reading FLAIR.
+Initialising Filters.
+Filter Initialisation Complete.
