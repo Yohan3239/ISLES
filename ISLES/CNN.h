@@ -59,22 +59,27 @@ namespace C
             std::vector<std::vector<std::vector<std::vector<float>>>>& output, // Output tensor
             int stride
         );
+
         void initialiseFilter(std::vector<std::vector<std::vector<std::vector<float>>>>& filter,
             int filter_channels, int filter_height, int filter_width, int filter_depth);
         void insertGrid(const std::vector<std::vector<std::vector<float>>>& grid);
 
+        void process16NiftiData(const std::string& filename, int numVoxels, float vox_offset, float scl_slope, float scl_inter, int bitpix);
+        void process64NiftiData(const std::string& filename, int numVoxels, float vox_offset, float scl_slope, float scl_inter, int bitpix);
+
+    private:
         int width; // Resets for each file
         int height; // Same as above
         int depth; // Same as above
 
         int resultWidth, resultHeight, resultDepth = 100; // What the dimensions should be resampled to. Updated from the resultant file.
 
+    public:
         std::vector<std::vector<std::vector<std::vector<float>>>> filter;
         std::vector<std::vector<std::vector<float>>> voxelsGrid; // Input data, normalised.
         std::vector<std::vector<std::vector<std::vector<float>>>> gridChannels;
         std::vector<std::vector<std::vector<float>>> convolveGrid; // Output through Convolutional layer
 
-        void process16NiftiData(const std::string& filename, int numVoxels, float vox_offset, float scl_slope, float scl_inter, int bitpix);
-        void process64NiftiData(const std::string& filename, int numVoxels, float vox_offset, float scl_slope, float scl_inter, int bitpix);
+       
     };
 }

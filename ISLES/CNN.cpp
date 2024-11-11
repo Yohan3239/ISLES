@@ -31,8 +31,8 @@ void CNN::convert1To3(std::vector<float>& voxels) {
     }
 } 
 
-
-void CNN::readNiftiHeader(const string& filename, bool bResample) { // Read Header file
+// Read Header file
+void CNN::readNiftiHeader(const string& filename, bool bResample) { 
 
     ifstream file(filename, ios::binary);
     if (!file.is_open()) {
@@ -92,6 +92,7 @@ void CNN::readNiftiHeader(const string& filename, bool bResample) { // Read Head
     }
 
 }
+// Process Nifti data (float)
 void CNN::process16NiftiData(const string& filename, int numVoxels, float vox_offset, float scl_slope, float scl_inter, int bitpix) {
 
     vector<float> voxels(numVoxels); // Store data as float
@@ -111,6 +112,7 @@ void CNN::process16NiftiData(const string& filename, int numVoxels, float vox_of
     file.close();
 }
 
+// Process Nifti data (double)
 void CNN::process64NiftiData(const string& filename, int numVoxels, float vox_offset, float scl_slope, float scl_inter, int bitpix) {
 
     vector<double> voxels(numVoxels);  // Temporarily store the data as double
@@ -138,20 +140,6 @@ void CNN::process64NiftiData(const string& filename, int numVoxels, float vox_of
 
     normalise(); // Normalise
     file.close();
-}
-// Prints initial input
-void CNN::printVoxelsGrid() {
-
-    for (int z = 0; z < depth; ++z) {
-        writeToLog("Slice " + to_string(z + 1));
-        for (int y = 0; y < height; ++y) {
-            for (int x = 0; x < width; ++x) {
-                writeToLogNoLine(to_string(voxelsGrid[z][y][x]) + "    ");  // Print each value with a tab space
-            }
-            endLine();  // Move to the next row
-        }
-        endLine();  // Move to the next layer
-    }
 }
 
 // ReLU activation function
@@ -184,7 +172,7 @@ void CNN::normalise() {
     writeToLog("Insertion complete.");
 }
 
-// Convolution Layer. Applies 3D filters to the 3D input matrix
+// Convolution Layer. Applies 3D filters to all 3D input tensors into several 3D output tensors
 void CNN::convolve(
     const std::vector<std::vector<std::vector<std::vector<float>>>>& input, // 4D Input tensor
     const std::vector<std::vector<std::vector<std::vector<std::vector<float>>>>>& filters, // 4D Filters
@@ -247,6 +235,7 @@ void CNN::initialiseFilter(vector<vector<vector<vector<float>>>>& filter,
     int filter_channels, int filter_height, int filter_width, int filter_depth) {
     writeToLog("Initialising Filters.");
 
+    // Initialise filter tensor
     filter.resize(filter_channels,
         vector<vector<vector<float>>>(filter_height,
             vector<vector<float>>(filter_width,
@@ -270,9 +259,9 @@ void CNN::initialiseFilter(vector<vector<vector<vector<float>>>>& filter,
 }
 
 void CNN::clear() {
-    gridChannels.clear();
+    gridChannels.clear(); // Clear Channels for next set of files
 }
 
 void CNN::insertGrid(const std::vector<std::vector<std::vector<float>>>& grid) {
-    gridChannels.push_back(grid);
+    gridChannels.push_back(grid); // Push 3D grid into 4D tensor
 }
