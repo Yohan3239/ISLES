@@ -43,17 +43,19 @@ namespace C
             float srow_x[4], srow_y[4], srow_z[4];
             char intent_name[16];
             char magic[4];
-        };
+        }; // 348 byte struct to read Header data into // Struct to put header data into
 
-        float relu(float x);
-        void readNiftiHeader(const std::string& filename, bool bResample);
+        float relu(float x); // RELU
 
-        void convert1To3(std::vector<float>& voxels);
-        void printVoxelsGrid();
+        void readNiftiHeader(const std::string& filename, bool bFlair); // Read Header data
 
-        void normalise();
-        void clear();
-        void convolve(
+        void convert1To3(std::vector<float>& voxels); //1D to 3D data
+
+        void normalise(); // Normalise between [,0,1]
+        void clear(); // Clear all values for next case
+
+        // Convolutional Layer
+        void convolve( 
             const std::vector<std::vector<std::vector<std::vector<float>>>>& input, // Input tensor
             const std::vector<std::vector<std::vector<std::vector<std::vector<float>>>>>& filters, // Filters
             std::vector<std::vector<std::vector<std::vector<float>>>>& output, // Output tensor
@@ -66,14 +68,14 @@ namespace C
 
         void process16NiftiData(const std::string& filename, int numVoxels, float vox_offset, float scl_slope, float scl_inter, int bitpix);
         void process64NiftiData(const std::string& filename, int numVoxels, float vox_offset, float scl_slope, float scl_inter, int bitpix);
-
+        void resample(const std::vector<std::vector<std::vector<std::vector<float>>>>& grid, const int resultWidth, const int resultheight, const int resultDepth);
     private:
         int width; // Resets for each file
         int height; // Same as above
         int depth; // Same as above
 
         int resultWidth, resultHeight, resultDepth = 100; // What the dimensions should be resampled to. Updated from the resultant file.
-
+        
     public:
         std::vector<std::vector<std::vector<std::vector<float>>>> filter;
         std::vector<std::vector<std::vector<float>>> voxelsGrid; // Input data, normalised.
@@ -81,5 +83,61 @@ namespace C
         std::vector<std::vector<std::vector<float>>> convolveGrid; // Output through Convolutional layer
 
        
+
+        // TRANSFORM STUFF //
+        // Affine Transformation Matrix (4x4)
+        typedef std::vector<std::vector<float>> AffineMatrix;
+
+        // Rotation Transformation Matrix (3x3)
+        typedef std::vector<std::vector<float>> RotationMatrix;
+
+        RotationMatrix createDefaultRotationMatrix() {
+            return RotationMatrix(3, std::vector<float>(3, 0.0f)); // Initialize a 3x3 rotation matrix with 0.0f in all elements
+        }
+        AffineMatrix createDefaultAffineMatrix() {
+            return RotationMatrix(4, std::vector<float>(4, 0.0f)); // Initialize a 4x4 affine matrix with 0.0f in all elements
+        }
+        void matrixRotMultiplication(CNN::RotationMatrix mat1, CNN::RotationMatrix mat2, CNN::RotationMatrix resultMat);
+        // Quaternion structure
+        struct Quaternion {
+            float a, b, c, d;
+        };
+
+        
+        // Actual quaternions
+        Quaternion targetQuaternion;
+        Quaternion flairQuaternion;
+
+        // Quaternion->Rotation matrix
+        RotationMatrix targetRotMatrix = createDefaultRotationMatrix(); // Target(ADC/DWI) Rotation Matrix
+        RotationMatrix flairRotMatrix = createDefaultRotationMatrix(); // FLAIR Rotation Matrix
+
+        // Affine matrix storage
+        AffineMatrix targetAffineMatrix = createDefaultAffineMatrix(); // Target(ADC/DWI) Affine Matrix
+        AffineMatrix flairAffineMatrix = createDefaultAffineMatrix(); // FLAIR Affine Matrix
+        
+        // Inversed rotation matrix
+        RotationMatrix targetRotInverseMatrix = createDefaultRotationMatrix(); // Target(ADC/DWI) Rotation matrix INVERSED to
+        AffineMatrix targetAffineInverseMatrix = createDefaultAffineMatrix();
+
+        RotationMatrix finalRotMatrix = createDefaultRotationMatrix();
+        AffineMatrix finalAffineMatrix = createDefaultAffineMatrix(); 
+
+        /// <summary>
+        /// FLAIR quaternion -> FLAIR rotation matrix.
+        /// ADC/DWI quaternion -> ADC/DWI rotation matrix -> ADC/DWI inverse rotation matrix
+        /// FLAIR affine matrix
+        /// ADC/DWI affine matrix -> ADC/DWI inverse affine matrix
+        /// 
+        /// Apply (FLAIR rotation mat * ADC/DWI inverse rotation mat) to FLAIR grid
+        /// Apply (FLAIR affine mat * ADC/DWI inverse affine mat)
+        /// 
+        /// ...
+        /// 
+        /// Resample
+        /// </summary>
+
+        void quaternionToMatrix(const Quaternion& quaternion, RotationMatrix& matrix);
+        bool inverse(std::vector<std::vector<float>>& mat, std::vector<std::vector<float>>& result);
     };
 }

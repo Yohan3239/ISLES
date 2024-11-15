@@ -9,17 +9,16 @@
 #include "ISLES.h"
 #include "CNN.h"
 
-
 using namespace std;
 using namespace C;
 
 vector<vector<vector<int>>> input;
 
 // Convert 1D NifTI data to a 3D matrix
-void CNN::convert1To3(std::vector<float>& voxels) {
-    voxelsGrid = std::vector<std::vector<std::vector<float>>>(depth,
-        std::vector<std::vector<float>>(height,
-            std::vector<float>(width)));
+void CNN::convert1To3(vector<float>& voxels) {
+    voxelsGrid = vector<vector<vector<float>>>(depth,
+        vector<vector<float>>(height,
+            vector<float>(width)));
 
     for (int z = 0; z < depth; ++z) {
         for (int y = 0; y < height; ++y) {
@@ -32,7 +31,7 @@ void CNN::convert1To3(std::vector<float>& voxels) {
 } 
 
 // Read Header file
-void CNN::readNiftiHeader(const string& filename, bool bResample) { 
+void CNN::readNiftiHeader(const string& filename, bool bFlair) { 
 
     ifstream file(filename, ios::binary);
     if (!file.is_open()) {
@@ -64,19 +63,40 @@ void CNN::readNiftiHeader(const string& filename, bool bResample) {
     endLine();
     //Reading bytes 349 onwards into a 3D matrix
     
-    width = header.dim[1];
-    height = header.dim[2];
-    depth = header.dim[3];
+    width = header.dim[1]; // X
+    height = header.dim[2]; // Y
+    depth = header.dim[3]; // Z
     
     int numVoxels = width * height * depth; // Total number of voxels
 
-    if (!bResample) {
+    // RESAMPLING STUFF
+    if (!bFlair) {
+        
         resultWidth = width; // If the file is not being resampled, set the target resample dimensions as own dimensions
         resultHeight = height;
         resultDepth = depth;
+
+        // QUATERNION TO MATRIX
+        targetQuaternion.b = header.quatern_b;
+        targetQuaternion.c = header.quatern_c;
+        targetQuaternion.d = header.quatern_d;
+        targetQuaternion.a = sqrt(1.0f - header.quatern_b * header.quatern_b - header.quatern_c * header.quatern_c - header.quatern_d * header.quatern_d);
+        quaternionToMatrix(targetQuaternion, targetRotMatrix);
+        inverse(targetRotMatrix, targetRotInverseMatrix);
+
+        // AFFINE MATRIX
+
     }
-    else {
+    else { // is flair file!!
         writeToLog("Resample to Size (" + to_string(resultWidth) + ", " + to_string(resultHeight) + ", " + to_string(resultDepth) + ")."); // Resample
+        // Initialise flair Quaternion to be made into rotation matrix
+        flairQuaternion.b = header.quatern_b;
+        flairQuaternion.c = header.quatern_c;
+        flairQuaternion.d = header.quatern_d;
+        flairQuaternion.a = sqrt(1.0f - header.quatern_b * header.quatern_b - header.quatern_c * header.quatern_c - header.quatern_d * header.quatern_d);
+        quaternionToMatrix(flairQuaternion, flairRotMatrix); // Copy matrix-fied quaternion into flair rotation matrix
+        matrixRotMultiplication(flairRotMatrix, targetRotInverseMatrix, finalRotMatrix); // Multiply flair rotation matrix with the inverse of the target rotation inverse matrix and store it
+        
     }
     writeToLog("Total size: " + to_string(numVoxels));
     switch (header.datatype) {
@@ -172,20 +192,20 @@ void CNN::normalise() {
     writeToLog("Insertion complete.");
 }
 
-// Convolution Layer. Applies 3D filters to all 3D input tensors into several 3D output tensors
+// Convolution Layer. Applies 3D filters to all 3D input tensors into several 3D output tensors WIP
 void CNN::convolve(
-    const std::vector<std::vector<std::vector<std::vector<float>>>>& input, // 4D Input tensor
-    const std::vector<std::vector<std::vector<std::vector<std::vector<float>>>>>& filters, // 4D Filters
-    std::vector<std::vector<std::vector<std::vector<float>>>>& output, // 4D Output tensor
+    const vector<vector<vector<vector<float>>>>& input, // 4D Input tensor
+    const vector<vector<vector<vector<vector<float>>>>>& filters, // 4D Filters
+    vector<vector<vector<vector<float>>>>& output, // 4D Output tensor
     int stride // Stride value
 ) {
-    int inputHeight = input.size();
+    int inputChannels = input.size();
     int inputWidth = input[0].size();
-    int inputDepth = input[0][0].size();
-    int inputChannels = input[0][0][0].size();
+    int inputHeight = input[0][0].size();
+    int inputDepth = input[0][0][0].size();
 
-    int filterHeight = filters[0].size();
-    int filterWidth = filters[0][0].size();
+    int filterWidth = filters[0].size();
+    int filterHeight = filters[0][0].size();
     int filterDepth = filters[0][0][0].size();
     int outputChannels = filters[0][0][0][0].size();  // Number of filters needed
 
@@ -194,9 +214,9 @@ void CNN::convolve(
     int outputDepth = (inputDepth - filterDepth) / stride + 1;
 
     // Initialise  output tensor
-    output.resize(outputHeight, std::vector<std::vector<std::vector<float>>>(
-        outputWidth, std::vector<std::vector<float>>(
-            outputDepth, std::vector<float>(outputChannels, 0)
+    output.resize(outputHeight, vector<vector<vector<float>>>(
+        outputWidth, vector<vector<float>>(
+            outputDepth, vector<float>(outputChannels, 0)
         )));
 
     // Convolution
@@ -222,9 +242,7 @@ void CNN::convolve(
                             }
                         }
                     }
-
-                    // Apply activation (ReLU) and store the result
-                    output[i][j][k][f] = relu(sum);
+                    output[i][j][k][f] = relu(sum); // Apply activation(ReLU) and store the result
                 }
             }
         }
@@ -232,25 +250,25 @@ void CNN::convolve(
 }
 
 void CNN::initialiseFilter(vector<vector<vector<vector<float>>>>& filter,
-    int filter_channels, int filter_height, int filter_width, int filter_depth) {
+    int filterChannels, int filterWidth, int filterHeight, int filterDepth) {
     writeToLog("Initialising Filters.");
 
     // Initialise filter tensor
-    filter.resize(filter_channels,
-        vector<vector<vector<float>>>(filter_height,
-            vector<vector<float>>(filter_width,
-                std::vector<float>(filter_depth))));
+    filter.resize(filterChannels,
+        vector<vector<vector<float>>>(filterWidth,
+            vector<vector<float>>(filterHeight,
+                vector<float>(filterDepth))));
     
     // Randomly initialize filter values
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_real_distribution<float> dis(-1.0f, 1.0f);  // Random values between -1 and 1
+    random_device rd;
+    mt19937 gen(rd());
+    uniform_real_distribution<float> dis(-1.0f, 1.0f);  // Random values between -1 and 1
 
-    for (int f = 0; f < filter_channels; ++f) {
-        for (int h = 0; h < filter_height; ++h) {
-            for (int w = 0; w < filter_width; ++w) {
-                for (int d = 0; d < filter_depth; ++d) {
-                    filter[f][h][w][d] = dis(gen);  // Assign random value
+    for (int f = 0; f < filterChannels; ++f) {
+        for (int w = 0; w < filterWidth; ++w) {
+            for (int h = 0; h < filterHeight; ++h) {
+                for (int d = 0; d < filterDepth; ++d) {
+                    filter[f][w][h][d] = dis(gen);  // Assign random value
                 }
             }
         }
@@ -262,6 +280,126 @@ void CNN::clear() {
     gridChannels.clear(); // Clear Channels for next set of files
 }
 
-void CNN::insertGrid(const std::vector<std::vector<std::vector<float>>>& grid) {
+void CNN::insertGrid(const vector<vector<vector<float>>>& grid) {
     gridChannels.push_back(grid); // Push 3D grid into 4D tensor
+}
+
+void CNN::resample(const vector<vector<vector<vector<float>>>>& grid, const int resultWidth, const int resultheight, const int resultDepth) {
+    
+    
+    int startWidth = grid.size();
+    int startHeight = grid[0].size();
+    int startDepth = grid[0][0].size();
+
+    float xScale = static_cast<float>(startWidth) / resultWidth;
+    float yScale = static_cast<float>(startHeight) / resultHeight;
+    float zScale = static_cast<float>(startDepth) / resultDepth;
+
+
+    //voxelsGrid.resize(resultWidth,             ADD AT END OF THIS THING
+      //      vector<vector<float>>(resultHeight,
+        //        vector<float>(resultDepth)));
+
+    vector<vector<vector<float>>> resampledImage(resultWidth, // Resampled image to store result in. will be copied into voxelsGrid??
+        vector<vector<float>>(resultHeight,
+            vector<float>(resultDepth)));
+
+
+
+}
+
+// Trilinear Interpolation...from scratch i dont wanna do this anym
+float triLerp(const std::vector<std::vector<std::vector<float>>>& originalImage, float x, float y, float z) {
+    int x0 = static_cast<int>(std::floor(x));
+    int x1 = x0 + 1;
+    int y0 = static_cast<int>(std::floor(y));
+    int y1 = y0 + 1;
+    int z0 = static_cast<int>(std::floor(z));
+    int z1 = z0 + 1;
+
+    float xd = x - x0;
+    float yd = y - y0;
+    float zd = z - z0;
+
+    // Ensure indices are within bounds
+    x0 = max(0, min(x0, (int)originalImage.size() - 1));
+    x1 = max(0, min(x1, (int)originalImage.size() - 1));
+    y0 = max(0, min(y0, (int)originalImage[0].size() - 1));
+    y1 = max(0, min(y1, (int)originalImage[0].size() - 1));
+    z0 = max(0, min(z0, (int)originalImage[0][0].size() - 1));
+    z1 = max(0, min(z1, (int)originalImage[0][0].size() - 1));
+
+    // Trilinear interpolation
+    float c00 = originalImage[x0][y0][z0] * (1 - xd) + originalImage[x1][y0][z0] * xd;
+    float c01 = originalImage[x0][y0][z1] * (1 - xd) + originalImage[x1][y0][z1] * xd;
+    float c10 = originalImage[x0][y1][z0] * (1 - xd) + originalImage[x1][y1][z0] * xd;
+    float c11 = originalImage[x0][y1][z1] * (1 - xd) + originalImage[x1][y1][z1] * xd;
+
+    float c0 = c00 * (1 - yd) + c10 * yd;
+    float c1 = c01 * (1 - yd) + c11 * yd;
+
+    return c0 * (1 - zd) + c1 * zd;
+}
+
+// TRANSFORMS //
+void CNN::quaternionToMatrix(const CNN::Quaternion& quaternion, CNN::RotationMatrix& matrix) {
+
+    // Quaternion into matrix
+    matrix[0][0] = 1 - 2 * (quaternion.c * quaternion.c + quaternion.d * quaternion.d);
+    matrix[0][1] = 2 * (quaternion.b * quaternion.c - quaternion.d * quaternion.a);
+    matrix[0][2] = 2 * (quaternion.b * quaternion.d + quaternion.c * quaternion.a);
+
+    matrix[1][0] = 2 * (quaternion.b * quaternion.c + quaternion.d * quaternion.a);
+    matrix[1][1] = 1 - 2 * (quaternion.b * quaternion.b + quaternion.d * quaternion.d);
+    matrix[1][2] = 2 * (quaternion.c * quaternion.d - quaternion.b * quaternion.a);
+
+    matrix[2][0] = 2 * (quaternion.b * quaternion.d - quaternion.c * quaternion.a);
+    matrix[2][1] = 2 * (quaternion.c * quaternion.d + quaternion.b * quaternion.a);
+    matrix[2][2] = 1 - 2 * (quaternion.b * quaternion.b + quaternion.c * quaternion.c);
+
+}
+
+// Get INVERSE MATRIX
+bool CNN::inverse(vector<vector<float>>& mat, vector<vector<float>>& result) {
+    
+    // DETERMINANT //
+    double det = mat[0][0] * (mat[1][1] * mat[2][2] - mat[1][2] * mat[2][1]) -
+        mat[0][1] * (mat[1][0] * mat[2][2] - mat[1][2] * mat[2][0]) +
+        mat[0][2] * (mat[1][0] * mat[2][1] - mat[1][1] * mat[2][0]);
+
+    if (det == 0) {
+        return false;
+    }
+
+    // Adjugate Matrix
+    vector<vector<float>> adj(3, std::vector<float>(3, 0.0f));
+
+    adj[0][0] = mat[1][1] * mat[2][2] - mat[1][2] * mat[2][1];
+    adj[0][1] = mat[0][2] * mat[2][1] - mat[0][1] * mat[2][2];
+    adj[0   ][2] = mat[0][1] * mat[1][2] - mat[0][2] * mat[1][1];
+
+    adj[1][0] = mat[1][2] * mat[2][0] - mat[1][0] * mat[2][2];
+    adj[1][1] = mat[0][0] * mat[2][2] - mat[0][2] * mat[2][0];
+    adj[1][2] = mat[0][2] * mat[1][0] - mat[0][0] * mat[1][2];
+
+    adj[2][0] = mat[1][0] * mat[2][1] - mat[1][1] * mat[2][0];
+    adj[2][1] = mat[0][1] * mat[2][0] - mat[0][0] * mat[2][1];
+    adj[2][2] = mat[0][0] * mat[1][1] - mat[0][1] * mat[1][0];
+
+    // Divide the adjugate matrix by the determinant to get the inverse
+    double invDet = 1.0 / det;
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            result[i][j] = adj[i][j] * invDet;
+        }
+    }
+    return true;
+}
+
+void CNN::matrixRotMultiplication(CNN::RotationMatrix mat1, CNN::RotationMatrix mat2, CNN::RotationMatrix resultMat) {
+    for (int i = 0; i < 3; i++)
+        for (int j = 0; j < 3; j++) {
+            for (int u = 0; u < 3; u++)
+                resultMat[i][j] += mat1[i][u] * mat2[u][j];
+        }
 }

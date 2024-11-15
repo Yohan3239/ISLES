@@ -43,9 +43,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
     std::ofstream logFile("C:\\Users\\yohan\\source\\repos\\ISLES\\log.txt", std::ios::trunc);
 
-    std::string filename_FLAIR = "C:\\Users\\yohan\\Documents\\ISLES-2022\\ISLES-2022\\sub-strokecase0001\\ses-0001\\anat\\sub-strokecase0001_ses-0001_FLAIR.nii\\sub-strokecase0001_ses-0001_FLAIR.nii";
-    std::string filename_ADC = "C:\\Users\\yohan\\Documents\\ISLES-2022\\ISLES-2022\\sub-strokecase0001\\ses-0001\\dwi\\sub-strokecase0001_ses-0001_adc.nii\\sub-strokeperf0041_ses-20180528_ornt-2iso_skull-stripped_sequ-306_adc.nii";
-    std::string filename_DWI = "C:\\Users\\yohan\\Documents\\ISLES-2022\\ISLES-2022\\sub-strokecase0001\\ses-0001\\dwi\\sub-strokecase0001_ses-0001_dwi.nii\\sub-strokeperf0041_ses-20180528_ornt-2iso_skull-stripped_sequ-307_dwi.nii";
+    std::string filename_FLAIR = "C:\\Users\\yohan\\Documents\\ISLES-2022\\ISLES-2022\\sub-strokecase0115\\ses-0001\\anat\\sub-strokecase0115_ses-0001_FLAIR.nii\\sub-strokecase0115_ses-0001_FLAIR.nii";
+    std::string filename_ADC = "C:\\Users\\yohan\\Documents\\ISLES-2022\\ISLES-2022\\sub-strokecase0115\\ses-0001\\dwi\\sub-strokecase0115_ses-0001_adc.nii\\sub-Stroke29_iso_adc_skull_stripped.nii";
+    std::string filename_DWI = "C:\\Users\\yohan\\Documents\\ISLES-2022\\ISLES-2022\\sub-strokecase0115\\ses-0001\\dwi\\sub-strokecase0115_ses-0001_dwi.nii\\sub-Stroke29_iso_dwi_skull_stripped.nii";
 
 
     
@@ -65,7 +65,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     //CNNetwork.resample(); To be implemented
     writeToLog("Completed reading FLAIR.");
 
-    CNNetwork.initialiseFilter(CNNetwork.filter, 1, 3, 3, 3);
+    //CNNetwork.initialiseFilter(CNNetwork.filter, 1, 3, 3, 3);
     //CNNetwork.convolve(CNNetwork.voxelsGrid, CNNetwork.filter, CNNetwork.convolveGrid, 1); To be implemented
     
 
