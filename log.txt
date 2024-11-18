@@ -26,6 +26,7 @@ Intent P2: .
 Intent P3: .
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+Affine matrix is not invertible.
 Total size: 915712
 Scaling.
 Scaling finished.
@@ -65,6 +66,7 @@ Intent P2: .
 Intent P3: .
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+Affine matrix is not invertible.
 Total size: 915712
 Scaling.
 Scaling finished.
@@ -104,7 +106,9 @@ Intent P2: .
 Intent P3: .
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-Resample to Size (112, 112, 73).
+Resampling to Size (112, 112, 73).
+Processing FLAIR Quaternions to FLAIR Matrix.
+FLAIR Quaternions to FLAIR Matrix complete.
 Total size: 28562688
 Scaling.
 Scaling finished.

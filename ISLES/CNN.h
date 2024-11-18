@@ -68,7 +68,6 @@ namespace C
 
         void process16NiftiData(const std::string& filename, int numVoxels, float vox_offset, float scl_slope, float scl_inter, int bitpix);
         void process64NiftiData(const std::string& filename, int numVoxels, float vox_offset, float scl_slope, float scl_inter, int bitpix);
-        void resample(const std::vector<std::vector<std::vector<std::vector<float>>>>& grid, const int resultWidth, const int resultheight, const int resultDepth);
     private:
         int width; // Resets for each file
         int height; // Same as above
@@ -78,11 +77,10 @@ namespace C
         
     public:
         std::vector<std::vector<std::vector<std::vector<float>>>> filter;
-        std::vector<std::vector<std::vector<float>>> voxelsGrid; // Input data, normalised.
+        std::vector<std::vector<std::vector<float>>> voxelsGrid; // Input data, dimension FLAIR
+        std::vector<std::vector<std::vector<float>>> transformGrid; // Input data, transformed AND resampled using affine matrix, dimension ADC/DWI .
         std::vector<std::vector<std::vector<std::vector<float>>>> gridChannels;
         std::vector<std::vector<std::vector<float>>> convolveGrid; // Output through Convolutional layer
-
-       
 
         // TRANSFORM STUFF //
         // Affine Transformation Matrix (4x4)
@@ -97,12 +95,15 @@ namespace C
         AffineMatrix createDefaultAffineMatrix() {
             return RotationMatrix(4, std::vector<float>(4, 0.0f)); // Initialize a 4x4 affine matrix with 0.0f in all elements
         }
-        void matrixRotMultiplication(CNN::RotationMatrix mat1, CNN::RotationMatrix mat2, CNN::RotationMatrix resultMat);
+        
         // Quaternion structure
         struct Quaternion {
             float a, b, c, d;
         };
+        
+        // Default bottom row of affine matrix (0, 0, 0, 1) constant !!!
 
+        const std::vector<float> BottomAffineVector = { 0.f, 0.f, 0.f, 1.f };
         
         // Actual quaternions
         Quaternion targetQuaternion;
@@ -138,6 +139,14 @@ namespace C
         /// </summary>
 
         void quaternionToMatrix(const Quaternion& quaternion, RotationMatrix& matrix);
-        bool inverse(std::vector<std::vector<float>>& mat, std::vector<std::vector<float>>& result);
+        bool inverseRot(const std::vector<std::vector<float>>& mat, std::vector<std::vector<float>>& result);
+        void matrixRotMultiplication(const CNN::RotationMatrix mat1, const CNN::RotationMatrix mat2, CNN::RotationMatrix resultMat);
+
+        bool inverseAffine(const std::vector<std::vector<float>>& mat, std::vector<std::vector<float>>& result);
+        void matrixAffineMultiplication(const AffineMatrix mat1, const AffineMatrix mat2, AffineMatrix resultMat);
+
+        std::vector<float> applyAffineToPoint(const AffineMatrix mat, float x, float y, float z);
+        void applyAffineToGrid(const std::vector<std::vector<std::vector<float>>>& grid, std::vector<std::vector<std::vector<float>>>& result)''
+
     };
 }

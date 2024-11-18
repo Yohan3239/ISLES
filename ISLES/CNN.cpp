@@ -81,22 +81,41 @@ void CNN::readNiftiHeader(const string& filename, bool bFlair) {
         targetQuaternion.c = header.quatern_c;
         targetQuaternion.d = header.quatern_d;
         targetQuaternion.a = sqrt(1.0f - header.quatern_b * header.quatern_b - header.quatern_c * header.quatern_c - header.quatern_d * header.quatern_d);
-        quaternionToMatrix(targetQuaternion, targetRotMatrix);
-        inverse(targetRotMatrix, targetRotInverseMatrix);
-
+        quaternionToMatrix(targetQuaternion, targetRotMatrix); // Quaternion -> Matrix
+        inverseRot(targetRotMatrix, targetRotInverseMatrix); // Inverse Matrix
+        // ABOVE IS REDUNDANT // 
+        
         // AFFINE MATRIX
-
+        targetAffineMatrix.push_back(vector<float>(header.srow_x, header.srow_x + (sizeof header.srow_x / sizeof header.srow_x[0])));
+        targetAffineMatrix.push_back(vector<float>(header.srow_y, header.srow_y + (sizeof header.srow_y / sizeof header.srow_y[0])));
+        targetAffineMatrix.push_back(vector<float>(header.srow_z, header.srow_z + (sizeof header.srow_z / sizeof header.srow_z[0])));
+        targetAffineMatrix.push_back(BottomAffineVector);
+        inverseAffine(targetAffineMatrix, targetAffineInverseMatrix); // Inverse Matrix
     }
     else { // is flair file!!
-        writeToLog("Resample to Size (" + to_string(resultWidth) + ", " + to_string(resultHeight) + ", " + to_string(resultDepth) + ")."); // Resample
+        writeToLog("Resampling to Size (" + to_string(resultWidth) + ", " + to_string(resultHeight) + ", " + to_string(resultDepth) + ")."); // Resample
+        
         // Initialise flair Quaternion to be made into rotation matrix
+        writeToLog("Processing FLAIR Quaternions to FLAIR Matrix.");
         flairQuaternion.b = header.quatern_b;
         flairQuaternion.c = header.quatern_c;
         flairQuaternion.d = header.quatern_d;
         flairQuaternion.a = sqrt(1.0f - header.quatern_b * header.quatern_b - header.quatern_c * header.quatern_c - header.quatern_d * header.quatern_d);
         quaternionToMatrix(flairQuaternion, flairRotMatrix); // Copy matrix-fied quaternion into flair rotation matrix
-        matrixRotMultiplication(flairRotMatrix, targetRotInverseMatrix, finalRotMatrix); // Multiply flair rotation matrix with the inverse of the target rotation inverse matrix and store it
-        
+        writeToLog("FLAIR Quaternions to FLAIR Matrix complete.");
+        matrixRotMultiplication(targetRotInverseMatrix, flairRotMatrix, finalRotMatrix); // Multiply flair rotation matrix with the inverse of the target rotation inverse matrix and store it
+        // ABOVE IS REDUNDANT // 
+
+        //AFFINE MATRIX
+        flairAffineMatrix.push_back(vector<float>(header.srow_x, header.srow_x + (sizeof header.srow_x / sizeof header.srow_x[0])));
+        flairAffineMatrix.push_back(vector<float>(header.srow_y, header.srow_y + (sizeof header.srow_y / sizeof header.srow_y[0])));
+        flairAffineMatrix.push_back(vector<float>(header.srow_z, header.srow_z + (sizeof header.srow_z / sizeof header.srow_z[0])));
+        flairAffineMatrix.push_back(BottomAffineVector);
+
+        matrixAffineMultiplication(targetAffineInverseMatrix, flairAffineMatrix, finalAffineMatrix);
+
+        applyAffineToGrid(voxelsGrid, transformGrid);
+
     }
     writeToLog("Total size: " + to_string(numVoxels));
     switch (header.datatype) {
@@ -284,32 +303,8 @@ void CNN::insertGrid(const vector<vector<vector<float>>>& grid) {
     gridChannels.push_back(grid); // Push 3D grid into 4D tensor
 }
 
-void CNN::resample(const vector<vector<vector<vector<float>>>>& grid, const int resultWidth, const int resultheight, const int resultDepth) {
-    
-    
-    int startWidth = grid.size();
-    int startHeight = grid[0].size();
-    int startDepth = grid[0][0].size();
-
-    float xScale = static_cast<float>(startWidth) / resultWidth;
-    float yScale = static_cast<float>(startHeight) / resultHeight;
-    float zScale = static_cast<float>(startDepth) / resultDepth;
-
-
-    //voxelsGrid.resize(resultWidth,             ADD AT END OF THIS THING
-      //      vector<vector<float>>(resultHeight,
-        //        vector<float>(resultDepth)));
-
-    vector<vector<vector<float>>> resampledImage(resultWidth, // Resampled image to store result in. will be copied into voxelsGrid??
-        vector<vector<float>>(resultHeight,
-            vector<float>(resultDepth)));
-
-
-
-}
-
 // Trilinear Interpolation...from scratch i dont wanna do this anym
-float triLerp(const std::vector<std::vector<std::vector<float>>>& originalImage, float x, float y, float z) {
+float triLerp(const vector<vector<vector<float>>>& originalImage, float x, float y, float z) {
     int x0 = static_cast<int>(std::floor(x));
     int x1 = x0 + 1;
     int y0 = static_cast<int>(std::floor(y));
@@ -342,9 +337,11 @@ float triLerp(const std::vector<std::vector<std::vector<float>>>& originalImage,
 }
 
 // TRANSFORMS //
+
+//Quaternion into rotation matrix
 void CNN::quaternionToMatrix(const CNN::Quaternion& quaternion, CNN::RotationMatrix& matrix) {
 
-    // Quaternion into matrix
+    
     matrix[0][0] = 1 - 2 * (quaternion.c * quaternion.c + quaternion.d * quaternion.d);
     matrix[0][1] = 2 * (quaternion.b * quaternion.c - quaternion.d * quaternion.a);
     matrix[0][2] = 2 * (quaternion.b * quaternion.d + quaternion.c * quaternion.a);
@@ -359,8 +356,8 @@ void CNN::quaternionToMatrix(const CNN::Quaternion& quaternion, CNN::RotationMat
 
 }
 
-// Get INVERSE MATRIX
-bool CNN::inverse(vector<vector<float>>& mat, vector<vector<float>>& result) {
+// Get INVERSE ROTATION MATRIX (separate because rot is 3x3 affine is 4x4.)
+bool CNN::inverseRot(const vector<vector<float>>& mat, vector<vector<float>>& result) {
     
     // DETERMINANT //
     double det = mat[0][0] * (mat[1][1] * mat[2][2] - mat[1][2] * mat[2][1]) -
@@ -368,15 +365,16 @@ bool CNN::inverse(vector<vector<float>>& mat, vector<vector<float>>& result) {
         mat[0][2] * (mat[1][0] * mat[2][1] - mat[1][1] * mat[2][0]);
 
     if (det == 0) {
+        writeToLog("Rotation Matrix is not invertible.");
         return false;
     }
 
     // Adjugate Matrix
-    vector<vector<float>> adj(3, std::vector<float>(3, 0.0f));
+    vector<vector<float>> adj(3, vector<float>(3, 0.0f));
 
     adj[0][0] = mat[1][1] * mat[2][2] - mat[1][2] * mat[2][1];
     adj[0][1] = mat[0][2] * mat[2][1] - mat[0][1] * mat[2][2];
-    adj[0   ][2] = mat[0][1] * mat[1][2] - mat[0][2] * mat[1][1];
+    adj[0][2] = mat[0][1] * mat[1][2] - mat[0][2] * mat[1][1];
 
     adj[1][0] = mat[1][2] * mat[2][0] - mat[1][0] * mat[2][2];
     adj[1][1] = mat[0][0] * mat[2][2] - mat[0][2] * mat[2][0];
@@ -395,11 +393,80 @@ bool CNN::inverse(vector<vector<float>>& mat, vector<vector<float>>& result) {
     }
     return true;
 }
-
-void CNN::matrixRotMultiplication(CNN::RotationMatrix mat1, CNN::RotationMatrix mat2, CNN::RotationMatrix resultMat) {
-    for (int i = 0; i < 3; i++)
-        for (int j = 0; j < 3; j++) {
-            for (int u = 0; u < 3; u++)
-                resultMat[i][j] += mat1[i][u] * mat2[u][j];
+//Get Inverse of Affine matrix (4x4)
+bool CNN::inverseAffine(const vector<vector<float>>& mat, vector<vector<float>>& result) {
+    float det = 0;
+    // Get determinant
+    for (int i = 0; i < 4; ++i) {
+        det += mat[0][i] *
+            (mat[1][(i + 1) % 4] * (mat[2][(i + 2) % 4] * mat[3][(i + 3) % 4] - mat[2][(i + 3) % 4] * mat[3][(i + 2) % 4]) -
+                mat[1][(i + 2) % 4] * (mat[2][(i + 1) % 4] * mat[3][(i + 3) % 4] - mat[2][(i + 3) % 4] * mat[3][(i + 1) % 4]) +
+                mat[1][(i + 3) % 4] * (mat[2][(i + 1) % 4] * mat[3][(i + 2) % 4] - mat[2][(i + 2) % 4] * mat[3][(i + 1) % 4]));
+    }
+    if (det == 0) {
+        writeToLog("Affine matrix is not invertible.");
+        return false;
+    }
+    // Algorithm I found to directly calculate the inverse matrix of 4x4
+    for (int i = 0; i < 4; ++i) {
+        for (int j = 0; j < 4; ++j) {
+            result[i][j] =
+                ((mat[(j + 1) % 4][(i + 1) % 4] * (mat[(j + 2) % 4][(i + 2) % 4] * mat[(j + 3) % 4][(i + 3) % 4] - mat[(j + 2) % 4][(i + 3) % 4] * mat[(j + 3) % 4][(i + 2) % 4])) -
+                (mat[(j + 1) % 4][(i + 2) % 4] * (mat[(j + 2) % 4][(i + 1) % 4] * mat[(j + 3) % 4][(i + 3) % 4] - mat[(j + 2) % 4][(i + 3) % 4] * mat[(j + 3) % 4][(i + 1) % 4])) +
+                (mat[(j + 1) % 4][(i + 3) % 4] * (mat[(j + 2) % 4][(i + 1) % 4] * mat[(j + 3) % 4][(i + 2) % 4] - mat[(j + 2) % 4][(i + 2) % 4] * mat[(j + 3) % 4][(i + 1) % 4]))) *
+                1.0f/det;
         }
+    }
 }
+
+// Rotation Matrix Multiply (3x3)
+void CNN::matrixRotMultiplication(const RotationMatrix mat1, const RotationMatrix mat2, RotationMatrix resultMat) {
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+            for (int u = 0; u < 3; u++) {
+                resultMat[i][j] += mat1[i][u] * mat2[u][j];
+            }
+        }
+    }
+}
+// Affine Matrix Multiply (4x4)
+void CNN::matrixAffineMultiplication(const AffineMatrix mat1, const AffineMatrix mat2, AffineMatrix resultMat) {
+    for (int i = 0; i < 4; i++) {
+        for (int j = 0; j < 4; j++) {
+            for (int u = 0; u < 4; u++) {
+                resultMat[i][j] += mat1[i][u] * mat2[u][j];
+            }
+        }
+    }
+}
+
+// Apply the final affine matrix to a point in a grid (i.e. flair file data)
+vector<float> CNN::applyAffineToPoint(const AffineMatrix mat, float x, float y, float z) {
+    vector<float> point = { x, y, z, 1 };
+    vector<float> result(4, 0.0f);
+    for (int i = 0; i < 4; ++i) {
+        for (int j = 0; j < 4; ++j) {
+            result[i] += mat[i][j] * point[j];
+        }
+    }
+    return { result[0], result[1], result[2] };
+}
+
+void CNN::applyAffineToGrid(const vector<vector<vector<float>>>& grid, vector<vector<vector<float>>>& result) {
+    
+
+    result.resize(resultWidth, vector<vector<float>>(resultHeight, vector<float>(resultDepth, 0.f)));
+    for (int i = 0; i < resultWidth; ++i) {
+        for (int j = 0; j < resultHeight; ++j) {
+            for (int k = 0; k < resultDepth; ++k) {
+                vector<float> resultPoint = applyAffineToPoint(finalAffineMatrix, i, j, k);
+                float x = resultPoint[0];
+                float y = resultPoint[1];
+                float z = resultPoint[2];
+                result[i][j][k] = triLerp(grid, x, y, z);
+            }
+        }
+    }
+         
+}
+
