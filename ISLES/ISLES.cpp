@@ -55,6 +55,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     writeToLog("Trying to open file at: " + filename_ADC);
     CNNetwork.readNiftiHeader(filename_ADC, false);
     writeToLog("Completed reading ADC.");
+    CNNetwork.clear();
 
     writeToLog("Trying to open file at: " + filename_DWI);
     CNNetwork.readNiftiHeader(filename_DWI, false);
@@ -62,11 +63,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
     writeToLog("Trying to open file at: " + filename_FLAIR);
     CNNetwork.readNiftiHeader(filename_FLAIR, true);
-    //CNNetwork.resample(); To be implemented
     writeToLog("Completed reading FLAIR.");
 
     //CNNetwork.initialiseFilter(CNNetwork.filter, 1, 3, 3, 3);
-    //CNNetwork.convolve(CNNetwork.voxelsGrid, CNNetwork.filter, CNNetwork.convolveGrid, 1); To be implemented
+    //CNNetwork.convolve(CNNetwork.gridChannels, CNNetwork.filter, CNNetwork.convolveGrid, 1);
     
 
     //CODE END//

@@ -116,22 +116,6 @@ Inverting ADC/DWI affine Matrix.
 0.000000
 0.000000
 1.000000
--1.998803
-0.004890
--0.069007
-116.128822
-0.002510
-1.998811
-0.068922
--97.533890
--0.069135
--0.068794
-1.997621
--22.248417
-0.000000
-0.000000
-0.000000
-1.000000
 Completed inverting matrix.
 Total size: 915712
 Scaling.
@@ -188,6 +172,8 @@ Scaling.
 Scaling finished.
 Converting to 3D.
 Convert finished. Ready for Normalisation.
+Applying affine matrix to grid.
+Application complete.
 Normalising Transformed FLAIR grid.
 Normalisation Finished. Inserting to gridChannels as channel.
 Insertion complete.

@@ -16,19 +16,19 @@ vector<vector<vector<int>>> input;
 
 // Convert 1D NifTI data to a 3D matrix
 void CNN::convert1To3(vector<float>& voxels) {
-    voxelsGrid = vector<vector<vector<float>>>(depth,
+    voxelsGrid = vector<vector<vector<float>>>(width,
         vector<vector<float>>(height,
-            vector<float>(width)));
+            vector<float>(depth)));
 
-    for (int z = 0; z < depth; ++z) {
+    for (int x = 0; x < width; ++x) {
         for (int y = 0; y < height; ++y) {
-            for (int x = 0; x < width; ++x) {
-                int index = z * (height * width) + y * width + x; // Calculate index in the 1D array
-                voxelsGrid[z][y][x] = voxels[index]; 
+            for (int z = 0; z < depth; ++z) {
+                int index = x * (height * depth) + y * depth + z; // Calculate index in the 1D array
+                voxelsGrid[x][y][z] = voxels[index];
             }
         }
     }
-} 
+}
 
 // Read Header file
 void CNN::readNiftiHeader(const string& filename, bool bFlair) { 
@@ -149,8 +149,12 @@ void CNN::process16NiftiData(const string& filename, int numVoxels, float vox_of
     convert1To3(voxels); // Convert to 3D vector
     writeToLog("Convert finished. Ready for Normalisation.");
     if (bIsFlair) { 
-        writeToLog("Normalising Transformed FLAIR grid."); 
-        normalise(transformGrid); 
+        writeToLog("Applying affine matrix to grid.");
+        applyAffineToGrid(voxelsGrid, transformGrid);
+        writeToLog("Application complete.");
+
+        writeToLog("Normalising Transformed FLAIR grid.");
+        normalise(transformGrid);
     } else {
         writeToLog("Normalising ADC/DWI grid."); normalise(voxelsGrid);
     }
@@ -228,61 +232,28 @@ void CNN::normalise(vector<vector<vector<float>>>& grid) {
     writeToLog("Insertion complete.");
 }
  
-// Convolution Layer. Applies 3D filters to all 3D input tensors into several 3D output tensors WIP
+// Convolution Layer. Applies 3D filters to all 3D input tensors (FLAIR, ADC, DWI) into several 3D output tensors WIP
 void CNN::convolve(
-    const vector<vector<vector<vector<float>>>>& input, // 4D Input tensor
-    const vector<vector<vector<vector<vector<float>>>>>& filters, // 4D Filters
-    vector<vector<vector<vector<float>>>>& output, // 4D Output tensor
+    const vector<vector<vector<vector<float>>>>& input, // 4D Input tensor (3D volume x Channels)
+    const vector<vector<vector<vector<vector<float>>>>>& kernels, // 3D kernels (3D volume x Channels x Output)
+    vector<vector<vector<vector<float>>>>& output, // 4D Output tensor (3D volume x Output)
     int stride // Stride value
 ) {
+    writeToLog("convolving...");
     int inputChannels = input.size();
     int inputWidth = input[0].size();
     int inputHeight = input[0][0].size();
     int inputDepth = input[0][0][0].size();
-
-    int filterWidth = filters[0].size();
-    int filterHeight = filters[0][0].size();
-    int filterDepth = filters[0][0][0].size();
-    int outputChannels = filters[0][0][0][0].size();  // Number of filters needed
-
-    int outputHeight = (inputHeight - filterHeight) / stride + 1;
-    int outputWidth = (inputWidth - filterWidth) / stride + 1;
-    int outputDepth = (inputDepth - filterDepth) / stride + 1;
-
-    // Initialise  output tensor
-    output.resize(outputHeight, vector<vector<vector<float>>>(
-        outputWidth, vector<vector<float>>(
-            outputDepth, vector<float>(outputChannels, 0)
-        )));
-
-    // Convolution
-    for (int f = 0; f < outputChannels; ++f) {  // Iterate over all filters
-        for (int i = 0; i < outputHeight; ++i) {
-            for (int j = 0; j < outputWidth; ++j) {
-                for (int k = 0; k < outputDepth; ++k) {
-                    float sum = 0;
-
-                    // Iterate over the input channels
-                    for (int c = 0; c < inputChannels; ++c) {  // FLAIR, DWI, ADC
-                        for (int m = 0; m < filterHeight; ++m) {
-                            for (int n = 0; n < filterWidth; ++n) {
-                                for (int p = 0; p < filterDepth; ++p) {
-                                    // Calculate input indices
-                                    int x = i * stride + m;
-                                    int y = j * stride + n;
-                                    int z = k * stride + p;
-
-                                    // Convolve: multiply and accumulate
-                                    sum += input[x][y][z][c] * filters[c][m][n][p][f];
-                                }
-                            }
-                        }
-                    }
-                    output[i][j][k][f] = relu(sum); // Apply activation(ReLU) and store the result
-                }
-            }
-        }
+    if (inputChannels == gridChannels.size() && inputWidth == resultWidth && inputHeight == resultHeight && inputDepth == resultDepth) {
+        writeToLog("Input size as expected.");
     }
+    else writeToLog("Input size incorrect. Error.");
+    int filterChannels = input.size();
+    int filterWidth = input[0].size();
+    int filterHeight = input[0][0].size();
+    int filterDepth = input[0][0][0].size();
+
+
 }
 
 void CNN::initialiseFilter(vector<vector<vector<vector<float>>>>& filter,
@@ -312,10 +283,20 @@ void CNN::initialiseFilter(vector<vector<vector<vector<float>>>>& filter,
     writeToLog("Filter Initialisation Complete.");
 }
 
-void CNN::clear() {
+void CNN::clearAll() {
     gridChannels.clear(); // Clear Channels for next set of files
 }
 
+void CNN::clear() {
+    targetAffineMatrix.clear(); // Target(ADC/DWI) Affine Matrix
+    flairAffineMatrix.clear(); // FLAIR Affine Matrix
+
+    // Clear inverse for second ADC/DWI file to be the template since they have the same volume
+    targetAffineInverseMatrix = createDefaultAffineMatrix();
+
+    finalAffineMatrix = createDefaultAffineMatrix();
+
+}
 void CNN::insertGrid(const vector<vector<vector<float>>>& grid) {
     gridChannels.push_back(grid); // Push 3D grid into 4D tensor
 }

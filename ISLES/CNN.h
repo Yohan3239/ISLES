@@ -54,12 +54,13 @@ namespace C
         void convert1To3(std::vector<float>& voxels); //1D to 3D data
 
         void normalise(std::vector<std::vector<std::vector<float>>>& grid); // Normalise between [,0,1]
-        void clear(); // Clear all values for next case
+        void clearAll(); // Clear all values for next case
+        void clear(); // Clear for next file
 
         // Convolutional Layer
         void convolve( 
             const std::vector<std::vector<std::vector<std::vector<float>>>>& input, // Input tensor
-            const std::vector<std::vector<std::vector<std::vector<std::vector<float>>>>>& filters, // Filters
+            const std::vector<std::vector<std::vector<std::vector<std::vector<float>>>>>& kernels, // Filters
             std::vector<std::vector<std::vector<std::vector<float>>>>& output, // Output tensor
             int stride
         );
@@ -82,7 +83,7 @@ namespace C
         std::vector<std::vector<std::vector<float>>> voxelsGrid; // Input data, dimension FLAIR
         std::vector<std::vector<std::vector<float>>> transformGrid; // Input data, transformed AND resampled using affine matrix, dimension ADC/DWI .
         std::vector<std::vector<std::vector<std::vector<float>>>> gridChannels;
-        std::vector<std::vector<std::vector<float>>> convolveGrid; // Output through Convolutional layer
+        std::vector<std::vector<std::vector<std::vector<float>>>> convolveGrid; // Output through Convolutional layer
 
         // TRANSFORM STUFF //
         // Affine Transformation Matrix (4x4)
