@@ -32,11 +32,12 @@ void CNN::convert1To3(vector<float>& voxels) {
 
 // Read Header file
 void CNN::readNiftiHeader(const string& filename, bool bFlair) { 
-
-    ifstream file(filename, ios::binary);
+    bIsFlair = bFlair;
+    ifstream file(filename, ios::binary); // Binary file
     if (!file.is_open()) {
         writeToLog(".nii File open Error");
     }
+
     NiftiHeader header;
     file.read(reinterpret_cast<char*>(&header), 348); // Read the first 348 bytes, which is the header
     if (file.fail()) {
@@ -44,7 +45,8 @@ void CNN::readNiftiHeader(const string& filename, bool bFlair) {
         file.close();
         return;
     }
-    //Header metadata reading
+
+    // Header metadata reading
     writeToLog("HEADER METADATA");
     writeToLog("Data type: " + to_string(header.datatype));
     writeToLog("Number of Dimensions: " + to_string(header.dim[0]) + "\nX: " + to_string(header.dim[1]) + "\nY: " + to_string(header.dim[2]) + "\nZ: " + to_string(header.dim[3]));
@@ -55,13 +57,15 @@ void CNN::readNiftiHeader(const string& filename, bool bFlair) {
     writeToLog("scl_inter: " + to_string(header.scl_inter));
     writeToLog("Q Transform Code: " + to_string(header.qform_code));
     writeToLog("S Transform Code: " + to_string(header.sform_code));
-    writeToLog("Quaternion offset X: " + to_string(header.qoffset_x) + "\nQuaternion offset Y: " + to_string(header.qoffset_y) + "\nQuaternion offset Z: " + to_string(header.qoffset_z));
-    writeToLog("Quaternion Coeff. b: " + to_string(header.quatern_b) + "\nQuaternion Coeff. c: " + to_string(header.quatern_c) + "\nQuaternion Coeff. d: " + to_string(header.quatern_d));
+    writeToLog("Affine Row X. 0: " + to_string(header.srow_x[0]) + "\nAffine Row X. 1: " + to_string(header.srow_x[1]) + "\nAffine Row X. 2: " + to_string(header.srow_x[2]) + "\nAffine Row X. 3: " + to_string(header.srow_x[3]));
+    writeToLog("Affine Row Y. 0: " + to_string(header.srow_y[0]) + "\nAffine Row Y. 1: " + to_string(header.srow_y[1]) + "\nAffine Row Y. 2: " + to_string(header.srow_y[2]) + "\nAffine Row Y. 3: " + to_string(header.srow_y[3]));
+    writeToLog("Affine Row Z. 0: " + to_string(header.srow_z[0]) + "\nAffine Row Z. 1: " + to_string(header.srow_z[1]) + "\nAffine Row Z. 2: " + to_string(header.srow_z[2]) + "\nAffine Row Z. 3: " + to_string(header.srow_z[3]));
     writeToLog("Intent Name: " + string(header.intent_name));
     writeToLog("Intent P1: " + to_string(header.intent_p1) + "\nIntent P2: " + to_string(header.intent_p2) + "\nIntent P3: " + to_string(header.intent_p3));
     writeToLog("/////////////////////////////////////////////////////////////////////////////////////////////////////////////////");
     endLine();
-    //Reading bytes 349 onwards into a 3D matrix
+    
+    //Reading bytes 349 onwards into a 3D matrix//
     
     width = header.dim[1]; // X
     height = header.dim[2]; // Y
@@ -69,53 +73,50 @@ void CNN::readNiftiHeader(const string& filename, bool bFlair) {
     
     int numVoxels = width * height * depth; // Total number of voxels
 
-    // RESAMPLING STUFF
-    if (!bFlair) {
+    // Transformations and Resampling
+    if (!bFlair) { // Is target file
         
         resultWidth = width; // If the file is not being resampled, set the target resample dimensions as own dimensions
-        resultHeight = height;
+        resultHeight = height; 
         resultDepth = depth;
-
-        // QUATERNION TO MATRIX
-        targetQuaternion.b = header.quatern_b;
-        targetQuaternion.c = header.quatern_c;
-        targetQuaternion.d = header.quatern_d;
-        targetQuaternion.a = sqrt(1.0f - header.quatern_b * header.quatern_b - header.quatern_c * header.quatern_c - header.quatern_d * header.quatern_d);
-        quaternionToMatrix(targetQuaternion, targetRotMatrix); // Quaternion -> Matrix
-        inverseRot(targetRotMatrix, targetRotInverseMatrix); // Inverse Matrix
-        // ABOVE IS REDUNDANT // 
         
         // AFFINE MATRIX
-        targetAffineMatrix.push_back(vector<float>(header.srow_x, header.srow_x + (sizeof header.srow_x / sizeof header.srow_x[0])));
-        targetAffineMatrix.push_back(vector<float>(header.srow_y, header.srow_y + (sizeof header.srow_y / sizeof header.srow_y[0])));
-        targetAffineMatrix.push_back(vector<float>(header.srow_z, header.srow_z + (sizeof header.srow_z / sizeof header.srow_z[0])));
+        writeToLog("Compiling ADC/DWI affine matrix.");
+        vector<float> vecX = { header.srow_x[0], header.srow_x[1], header.srow_x[2], header.srow_x[3] };
+        vector<float> vecY = { header.srow_y[0], header.srow_y[1], header.srow_y[2], header.srow_y[3] };
+        vector<float> vecZ = { header.srow_z[0], header.srow_z[1], header.srow_z[2], header.srow_z[3] };
+        targetAffineMatrix.push_back(vecX);
+        targetAffineMatrix.push_back(vecY);
+        targetAffineMatrix.push_back(vecZ);
         targetAffineMatrix.push_back(BottomAffineVector);
+        writeToLog("Completed compiling ADC/DWI affine matrix.");
+        writeToLog("Inverting ADC/DWI affine Matrix.");
+        for (const auto& row : targetAffineMatrix) {
+            for (const auto& element : row) {
+                writeToLog(to_string(element));
+            }
+        }
         inverseAffine(targetAffineMatrix, targetAffineInverseMatrix); // Inverse Matrix
+        writeToLog("Completed inverting matrix.");
     }
     else { // is flair file!!
         writeToLog("Resampling to Size (" + to_string(resultWidth) + ", " + to_string(resultHeight) + ", " + to_string(resultDepth) + ")."); // Resample
-        
-        // Initialise flair Quaternion to be made into rotation matrix
-        writeToLog("Processing FLAIR Quaternions to FLAIR Matrix.");
-        flairQuaternion.b = header.quatern_b;
-        flairQuaternion.c = header.quatern_c;
-        flairQuaternion.d = header.quatern_d;
-        flairQuaternion.a = sqrt(1.0f - header.quatern_b * header.quatern_b - header.quatern_c * header.quatern_c - header.quatern_d * header.quatern_d);
-        quaternionToMatrix(flairQuaternion, flairRotMatrix); // Copy matrix-fied quaternion into flair rotation matrix
-        writeToLog("FLAIR Quaternions to FLAIR Matrix complete.");
-        matrixRotMultiplication(targetRotInverseMatrix, flairRotMatrix, finalRotMatrix); // Multiply flair rotation matrix with the inverse of the target rotation inverse matrix and store it
-        // ABOVE IS REDUNDANT // 
 
         //AFFINE MATRIX
-        flairAffineMatrix.push_back(vector<float>(header.srow_x, header.srow_x + (sizeof header.srow_x / sizeof header.srow_x[0])));
-        flairAffineMatrix.push_back(vector<float>(header.srow_y, header.srow_y + (sizeof header.srow_y / sizeof header.srow_y[0])));
-        flairAffineMatrix.push_back(vector<float>(header.srow_z, header.srow_z + (sizeof header.srow_z / sizeof header.srow_z[0])));
+        writeToLog("Compiling FLAIR affine matrix.");
+        vector<float> vecX = { header.srow_x[0], header.srow_x[1], header.srow_x[2], header.srow_x[3] };
+        vector<float> vecY = { header.srow_y[0], header.srow_y[1], header.srow_y[2], header.srow_y[3] };
+        vector<float> vecZ = { header.srow_z[0], header.srow_z[1], header.srow_z[2], header.srow_z[3] };
+        flairAffineMatrix.push_back(vecX);
+        flairAffineMatrix.push_back(vecY);
+        flairAffineMatrix.push_back(vecZ);
         flairAffineMatrix.push_back(BottomAffineVector);
+        writeToLog("Completed compiling FLAIR affine matrix.");
 
+        writeToLog("Multiplying Inverse of target affine matrix with FLAIR affine matrix.");
         matrixAffineMultiplication(targetAffineInverseMatrix, flairAffineMatrix, finalAffineMatrix);
-
-        applyAffineToGrid(voxelsGrid, transformGrid);
-
+        writeToLog("Multiplication complete.");
+ 
     }
     writeToLog("Total size: " + to_string(numVoxels));
     switch (header.datatype) {
@@ -147,7 +148,13 @@ void CNN::process16NiftiData(const string& filename, int numVoxels, float vox_of
     writeToLog("Converting to 3D.");
     convert1To3(voxels); // Convert to 3D vector
     writeToLog("Convert finished. Ready for Normalisation.");
-    normalise(); // Normalise
+    if (bIsFlair) { 
+        writeToLog("Normalising Transformed FLAIR grid."); 
+        normalise(transformGrid); 
+    } else {
+        writeToLog("Normalising ADC/DWI grid."); normalise(voxelsGrid);
+    }
+    
     file.close();
 }
 
@@ -177,7 +184,18 @@ void CNN::process64NiftiData(const string& filename, int numVoxels, float vox_of
     convert1To3(floatVoxels); // Convert to 3D vector
     writeToLog("Conversion to 3D complete. Ready for Normalisation.");
 
-    normalise(); // Normalise
+    if (bIsFlair) { 
+        writeToLog("Applying affine matrix to grid.");
+        applyAffineToGrid(voxelsGrid, transformGrid);
+        writeToLog("Application complete.");
+
+        writeToLog("Normalising Transformed FLAIR grid."); 
+        normalise(transformGrid);        
+    }
+    else {
+        writeToLog("Normalising ADC/DWI grid.");
+        normalise(voxelsGrid);
+    }
     file.close();
 }
 
@@ -187,10 +205,9 @@ float CNN::relu(float x) {
 }
 
 // Normalises all values into [0,1]
-void CNN::normalise() {
-    writeToLog("Normalising.");
+void CNN::normalise(vector<vector<vector<float>>>& grid) {
     float max_value = 0;
-    for (const auto& slice : voxelsGrid) {
+    for (const auto& slice : grid) {
         for (const auto& row : slice) {
             for (const auto& voxel : row) {
                 max_value = max(max_value, voxel); // Gets maximum value
@@ -199,7 +216,7 @@ void CNN::normalise() {
     }
 
     
-    for (auto& slice : voxelsGrid) {
+    for (auto& slice : grid) {
         for (auto& row : slice) {
             for (auto& voxel : row) {
                 voxel /= max_value;  // Normalises to [0, 1] using maximum value
@@ -207,10 +224,10 @@ void CNN::normalise() {
         }
     }
     writeToLog("Normalisation Finished. Inserting to gridChannels as channel.");
-    insertGrid(voxelsGrid); // Inserts the current 3D grid into 4D tensor as a channel
+    insertGrid(grid); // Inserts the current 3D grid into 4D tensor as a channel
     writeToLog("Insertion complete.");
 }
-
+ 
 // Convolution Layer. Applies 3D filters to all 3D input tensors into several 3D output tensors WIP
 void CNN::convolve(
     const vector<vector<vector<vector<float>>>>& input, // 4D Input tensor
@@ -338,61 +355,6 @@ float triLerp(const vector<vector<vector<float>>>& originalImage, float x, float
 
 // TRANSFORMS //
 
-//Quaternion into rotation matrix
-void CNN::quaternionToMatrix(const CNN::Quaternion& quaternion, CNN::RotationMatrix& matrix) {
-
-    
-    matrix[0][0] = 1 - 2 * (quaternion.c * quaternion.c + quaternion.d * quaternion.d);
-    matrix[0][1] = 2 * (quaternion.b * quaternion.c - quaternion.d * quaternion.a);
-    matrix[0][2] = 2 * (quaternion.b * quaternion.d + quaternion.c * quaternion.a);
-
-    matrix[1][0] = 2 * (quaternion.b * quaternion.c + quaternion.d * quaternion.a);
-    matrix[1][1] = 1 - 2 * (quaternion.b * quaternion.b + quaternion.d * quaternion.d);
-    matrix[1][2] = 2 * (quaternion.c * quaternion.d - quaternion.b * quaternion.a);
-
-    matrix[2][0] = 2 * (quaternion.b * quaternion.d - quaternion.c * quaternion.a);
-    matrix[2][1] = 2 * (quaternion.c * quaternion.d + quaternion.b * quaternion.a);
-    matrix[2][2] = 1 - 2 * (quaternion.b * quaternion.b + quaternion.c * quaternion.c);
-
-}
-
-// Get INVERSE ROTATION MATRIX (separate because rot is 3x3 affine is 4x4.)
-bool CNN::inverseRot(const vector<vector<float>>& mat, vector<vector<float>>& result) {
-    
-    // DETERMINANT //
-    double det = mat[0][0] * (mat[1][1] * mat[2][2] - mat[1][2] * mat[2][1]) -
-        mat[0][1] * (mat[1][0] * mat[2][2] - mat[1][2] * mat[2][0]) +
-        mat[0][2] * (mat[1][0] * mat[2][1] - mat[1][1] * mat[2][0]);
-
-    if (det == 0) {
-        writeToLog("Rotation Matrix is not invertible.");
-        return false;
-    }
-
-    // Adjugate Matrix
-    vector<vector<float>> adj(3, vector<float>(3, 0.0f));
-
-    adj[0][0] = mat[1][1] * mat[2][2] - mat[1][2] * mat[2][1];
-    adj[0][1] = mat[0][2] * mat[2][1] - mat[0][1] * mat[2][2];
-    adj[0][2] = mat[0][1] * mat[1][2] - mat[0][2] * mat[1][1];
-
-    adj[1][0] = mat[1][2] * mat[2][0] - mat[1][0] * mat[2][2];
-    adj[1][1] = mat[0][0] * mat[2][2] - mat[0][2] * mat[2][0];
-    adj[1][2] = mat[0][2] * mat[1][0] - mat[0][0] * mat[1][2];
-
-    adj[2][0] = mat[1][0] * mat[2][1] - mat[1][1] * mat[2][0];
-    adj[2][1] = mat[0][1] * mat[2][0] - mat[0][0] * mat[2][1];
-    adj[2][2] = mat[0][0] * mat[1][1] - mat[0][1] * mat[1][0];
-
-    // Divide the adjugate matrix by the determinant to get the inverse
-    double invDet = 1.0 / det;
-    for (int i = 0; i < 3; ++i) {
-        for (int j = 0; j < 3; ++j) {
-            result[i][j] = adj[i][j] * invDet;
-        }
-    }
-    return true;
-}
 //Get Inverse of Affine matrix (4x4)
 bool CNN::inverseAffine(const vector<vector<float>>& mat, vector<vector<float>>& result) {
     float det = 0;
@@ -419,16 +381,6 @@ bool CNN::inverseAffine(const vector<vector<float>>& mat, vector<vector<float>>&
     }
 }
 
-// Rotation Matrix Multiply (3x3)
-void CNN::matrixRotMultiplication(const RotationMatrix mat1, const RotationMatrix mat2, RotationMatrix resultMat) {
-    for (int i = 0; i < 3; i++) {
-        for (int j = 0; j < 3; j++) {
-            for (int u = 0; u < 3; u++) {
-                resultMat[i][j] += mat1[i][u] * mat2[u][j];
-            }
-        }
-    }
-}
 // Affine Matrix Multiply (4x4)
 void CNN::matrixAffineMultiplication(const AffineMatrix mat1, const AffineMatrix mat2, AffineMatrix resultMat) {
     for (int i = 0; i < 4; i++) {
@@ -466,7 +418,6 @@ void CNN::applyAffineToGrid(const vector<vector<vector<float>>>& grid, vector<ve
                 result[i][j][k] = triLerp(grid, x, y, z);
             }
         }
-    }
-         
+    }    
 }
 

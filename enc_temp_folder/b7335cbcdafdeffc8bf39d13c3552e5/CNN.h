@@ -88,22 +88,42 @@ namespace C
         // Affine Transformation Matrix (4x4)
         typedef std::vector<std::vector<float>> AffineMatrix;
 
-        AffineMatrix createDefaultAffineMatrix() {
-            return AffineMatrix(4, std::vector<float>(4, 0.0f)); // Initialize a 4x4 rotation matrix with 0.0f in all elements
+        // Rotation Transformation Matrix (3x3)
+        typedef std::vector<std::vector<float>> RotationMatrix;
+
+        RotationMatrix createDefaultRotationMatrix() {
+            return RotationMatrix(3, std::vector<float>(3, 0.0f)); // Initialize a 3x3 rotation matrix with 0.0f in all elements
+        }
+        RotationMatrix createDefaultAffineMatrix() {
+            return RotationMatrix(4, std::vector<float>(4, 0.0f)); // Initialize a 4x4 rotation matrix with 0.0f in all elements
         }
         
+        // Quaternion structure
+        struct Quaternion {
+            float a, b, c, d;
+        };
         
         // Default bottom row of affine matrix (0, 0, 0, 1) constant !!!
 
         const std::vector<float> BottomAffineVector = { 0.f, 0.f, 0.f, 1.f };
+        
+        // Actual quaternions
+        Quaternion targetQuaternion;
+        Quaternion flairQuaternion;
+
+        // Quaternion->Rotation matrix
+        RotationMatrix targetRotMatrix = createDefaultRotationMatrix(); // Target(ADC/DWI) Rotation Matrix
+        RotationMatrix flairRotMatrix = createDefaultRotationMatrix(); // FLAIR Rotation Matrix
 
         // Affine matrix storage
         AffineMatrix targetAffineMatrix; // Target(ADC/DWI) Affine Matrix
         AffineMatrix flairAffineMatrix; // FLAIR Affine Matrix
         
-        // Inverse
+        // Inversed rotation matrix
+        RotationMatrix targetRotInverseMatrix = createDefaultRotationMatrix(); // Target(ADC/DWI) Rotation matrix INVERSED to
         AffineMatrix targetAffineInverseMatrix = createDefaultAffineMatrix();
 
+        RotationMatrix finalRotMatrix = createDefaultRotationMatrix();
         AffineMatrix finalAffineMatrix = createDefaultAffineMatrix(); 
 
         /// <summary>
@@ -120,7 +140,10 @@ namespace C
         /// Resample
         /// </summary>
 
-        
+        void quaternionToMatrix(const Quaternion& quaternion, RotationMatrix& matrix);
+        bool inverseRot(const std::vector<std::vector<float>>& mat, std::vector<std::vector<float>>& result);
+        void matrixRotMultiplication(const CNN::RotationMatrix mat1, const CNN::RotationMatrix mat2, CNN::RotationMatrix resultMat);
+
         bool inverseAffine(const std::vector<std::vector<float>>& mat, std::vector<std::vector<float>>& result);
         void matrixAffineMultiplication(const AffineMatrix mat1, const AffineMatrix mat2, AffineMatrix resultMat);
 

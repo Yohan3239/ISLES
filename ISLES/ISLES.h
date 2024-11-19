@@ -6,11 +6,12 @@ inline std::string removeChar(std::string str, char charToRemove) {
     str.erase(std::remove(str.begin(), str.end(), charToRemove), str.end());
     return str;
 }
+
 inline void writeToLog(const std::string& message) {
 
     std::ofstream logFile("C:\\Users\\yohan\\source\\repos\\ISLES\\log.txt", std::ios::app);
     if (logFile.is_open()) {
-        logFile << removeChar(message, '0') << std::endl;
+        logFile << message << std::endl;
         logFile.flush();
     }
 }
@@ -19,7 +20,7 @@ inline void writeToLogNoLine(const std::string& message) {
 
     std::ofstream logFile("C:\\Users\\yohan\\source\\repos\\ISLES\\log.txt", std::ios::app);
     if (logFile.is_open()) {
-        logFile << removeChar(message, '0');
+        logFile << message;
         logFile.flush();
     }
 }

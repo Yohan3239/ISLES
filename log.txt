@@ -1,32 +1,57 @@
-Trying to open file at: C:\Users\yohan\Documents\ISLES-222\ISLES-222\sub-strokecase115\ses-1\dwi\sub-strokecase115_ses-1_adc.nii\sub-Stroke29_iso_adc_skull_stripped.nii
+Trying to open file at: C:\Users\yohan\Documents\ISLES-2022\ISLES-2022\sub-strokecase0115\ses-0001\dwi\sub-strokecase0115_ses-0001_adc.nii\sub-Stroke29_iso_adc_skull_stripped.nii
 HEADER METADATA
 Data type: 64
 Number of Dimensions: 3
 X: 112
 Y: 112
 Z: 73
-pixX: -1.
-pixY: 2.
-pixZ: 2.
+pixX: -1.000000
+pixY: 2.000000
+pixZ: 2.000000
 bit per voxel: 64
-Voxel offset: 352.
-scl_slope: 1.
-scl_inter: .
+Voxel offset: 352.000000
+scl_slope: 1.000000
+scl_inter: 0.000000
 Q Transform Code: 2
 S Transform Code: 1
-Quaternion offset X: 116.128822
-Quaternion offset Y: -97.53389
-Quaternion offset Z: -22.248417
-Quaternion Coeff. b: .925
-Quaternion Coeff. c: .99972
-Quaternion Coeff. d: -.1722
+Affine Row X. 0: -1.998803
+Affine Row X. 1: 0.004890
+Affine Row X. 2: -0.069007
+Affine Row X. 3: 116.128822
+Affine Row Y. 0: 0.002510
+Affine Row Y. 1: 1.998811
+Affine Row Y. 2: 0.068922
+Affine Row Y. 3: -97.533890
+Affine Row Z. 0: -0.069135
+Affine Row Z. 1: -0.068794
+Affine Row Z. 2: 1.997621
+Affine Row Z. 3: -22.248417
 Intent Name: 
-Intent P1: .
-Intent P2: .
-Intent P3: .
+Intent P1: 0.000000
+Intent P2: 0.000000
+Intent P3: 0.000000
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-Affine matrix is not invertible.
+Compiling ADC/DWI affine matrix.
+Completed compiling ADC/DWI affine matrix.
+Inverting ADC/DWI affine Matrix.
+-1.998803
+0.004890
+-0.069007
+116.128822
+0.002510
+1.998811
+0.068922
+-97.533890
+-0.069135
+-0.068794
+1.997621
+-22.248417
+0.000000
+0.000000
+0.000000
+1.000000
+Completed inverting matrix.
 Total size: 915712
 Scaling.
 Scaling finished.
@@ -34,39 +59,80 @@ Data is of type Double. Converting to float.
 Conversion to float complete.
 Converting to 3D.
 Conversion to 3D complete. Ready for Normalisation.
-Normalising.
+Normalising ADC/DWI grid.
 Normalisation Finished. Inserting to gridChannels as channel.
 Insertion complete.
 Completed reading ADC.
-Trying to open file at: C:\Users\yohan\Documents\ISLES-222\ISLES-222\sub-strokecase115\ses-1\dwi\sub-strokecase115_ses-1_dwi.nii\sub-Stroke29_iso_dwi_skull_stripped.nii
+Trying to open file at: C:\Users\yohan\Documents\ISLES-2022\ISLES-2022\sub-strokecase0115\ses-0001\dwi\sub-strokecase0115_ses-0001_dwi.nii\sub-Stroke29_iso_dwi_skull_stripped.nii
 HEADER METADATA
 Data type: 64
 Number of Dimensions: 3
 X: 112
 Y: 112
 Z: 73
-pixX: -1.
-pixY: 2.
-pixZ: 2.
+pixX: -1.000000
+pixY: 2.000000
+pixZ: 2.000000
 bit per voxel: 64
-Voxel offset: 352.
-scl_slope: 1.
-scl_inter: .
+Voxel offset: 352.000000
+scl_slope: 1.000000
+scl_inter: 0.000000
 Q Transform Code: 2
 S Transform Code: 1
-Quaternion offset X: 116.128822
-Quaternion offset Y: -97.53389
-Quaternion offset Z: -22.248417
-Quaternion Coeff. b: .925
-Quaternion Coeff. c: .99972
-Quaternion Coeff. d: -.1722
+Affine Row X. 0: -1.998803
+Affine Row X. 1: 0.004890
+Affine Row X. 2: -0.069007
+Affine Row X. 3: 116.128822
+Affine Row Y. 0: 0.002510
+Affine Row Y. 1: 1.998811
+Affine Row Y. 2: 0.068922
+Affine Row Y. 3: -97.533890
+Affine Row Z. 0: -0.069135
+Affine Row Z. 1: -0.068794
+Affine Row Z. 2: 1.997621
+Affine Row Z. 3: -22.248417
 Intent Name: 
-Intent P1: .
-Intent P2: .
-Intent P3: .
+Intent P1: 0.000000
+Intent P2: 0.000000
+Intent P3: 0.000000
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-Affine matrix is not invertible.
+Compiling ADC/DWI affine matrix.
+Completed compiling ADC/DWI affine matrix.
+Inverting ADC/DWI affine Matrix.
+-1.998803
+0.004890
+-0.069007
+116.128822
+0.002510
+1.998811
+0.068922
+-97.533890
+-0.069135
+-0.068794
+1.997621
+-22.248417
+0.000000
+0.000000
+0.000000
+1.000000
+-1.998803
+0.004890
+-0.069007
+116.128822
+0.002510
+1.998811
+0.068922
+-97.533890
+-0.069135
+-0.068794
+1.997621
+-22.248417
+0.000000
+0.000000
+0.000000
+1.000000
+Completed inverting matrix.
 Total size: 915712
 Scaling.
 Scaling finished.
@@ -74,47 +140,55 @@ Data is of type Double. Converting to float.
 Conversion to float complete.
 Converting to 3D.
 Conversion to 3D complete. Ready for Normalisation.
-Normalising.
+Normalising ADC/DWI grid.
 Normalisation Finished. Inserting to gridChannels as channel.
 Insertion complete.
 Completed reading DWI.
-Trying to open file at: C:\Users\yohan\Documents\ISLES-222\ISLES-222\sub-strokecase115\ses-1\anat\sub-strokecase115_ses-1_FLAIR.nii\sub-strokecase115_ses-1_FLAIR.nii
+Trying to open file at: C:\Users\yohan\Documents\ISLES-2022\ISLES-2022\sub-strokecase0115\ses-0001\anat\sub-strokecase0115_ses-0001_FLAIR.nii\sub-strokecase0115_ses-0001_FLAIR.nii
 HEADER METADATA
 Data type: 16
 Number of Dimensions: 3
 X: 253
 Y: 336
 Z: 336
-pixX: 1.
-pixY: .711536
-pixZ: .714286
+pixX: 1.000000
+pixY: 0.711536
+pixZ: 0.714286
 bit per voxel: 32
-Voxel offset: 352.
-scl_slope: 1.
-scl_inter: .
+Voxel offset: 352.000000
+scl_slope: 1.000000
+scl_inter: 0.000000
 Q Transform Code: 1
 S Transform Code: 1
-Quaternion offset X: -85.47515
-Quaternion offset Y: -11.272644
-Quaternion offset Z: -11.373581
-Quaternion Coeff. b: -.13864
-Quaternion Coeff. c: -.8137
-Quaternion Coeff. d: -.515
+Affine Row X. 0: 0.711441
+Affine Row X. 1: 0.000897
+Affine Row X. 2: -0.011613
+Affine Row X. 3: -85.475105
+Affine Row Y. 0: -0.000573
+Affine Row Y. 1: 0.714011
+Affine Row Y. 2: 0.019808
+Affine Row Y. 3: -101.272644
+Affine Row Z. 0: 0.011589
+Affine Row Z. 1: -0.019796
+Affine Row Z. 2: 0.713917
+Affine Row Z. 3: -101.373581
 Intent Name: 
-Intent P1: .
-Intent P2: .
-Intent P3: .
+Intent P1: 0.000000
+Intent P2: 0.000000
+Intent P3: 0.000000
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 Resampling to Size (112, 112, 73).
-Processing FLAIR Quaternions to FLAIR Matrix.
-FLAIR Quaternions to FLAIR Matrix complete.
+Compiling FLAIR affine matrix.
+Completed compiling FLAIR affine matrix.
+Multiplying Inverse of target affine matrix with FLAIR affine matrix.
+Multiplication complete.
 Total size: 28562688
 Scaling.
 Scaling finished.
 Converting to 3D.
 Convert finished. Ready for Normalisation.
-Normalising.
+Normalising Transformed FLAIR grid.
 Normalisation Finished. Inserting to gridChannels as channel.
 Insertion complete.
 Completed reading FLAIR.
