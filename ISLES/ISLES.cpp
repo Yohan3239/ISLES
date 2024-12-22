@@ -1,5 +1,4 @@
 // ISLES.cpp : Defines the entry point for the application.
-//
 
 #include <iostream>
 #include <filesystem>
@@ -14,11 +13,13 @@
 #include <string>
 
 
+
 #define MAX_LOADSTRING 100
 
-namespace fs = std::filesystem;
+
 using namespace C;
 using namespace std;
+
 
 // Global Variables:
 HINSTANCE hInst;                                // current instance
@@ -33,6 +34,12 @@ INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
 
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
+
+    
+
+
+
+
     _In_opt_ HINSTANCE hPrevInstance,
     _In_ LPWSTR lpCmdLine,
     _In_ int nCmdShow)
@@ -41,33 +48,191 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     UNREFERENCED_PARAMETER(lpCmdLine);
     // CODE //
 
-    std::ofstream logFile("C:\\Users\\yohan\\source\\repos\\ISLES\\log.txt", std::ios::trunc);
 
-    std::string filename_FLAIR = "C:\\Users\\yohan\\Documents\\ISLES-2022\\ISLES-2022\\sub-strokecase0115\\ses-0001\\anat\\sub-strokecase0115_ses-0001_FLAIR.nii\\sub-strokecase0115_ses-0001_FLAIR.nii";
-    std::string filename_ADC = "C:\\Users\\yohan\\Documents\\ISLES-2022\\ISLES-2022\\sub-strokecase0115\\ses-0001\\dwi\\sub-strokecase0115_ses-0001_adc.nii\\sub-Stroke29_iso_adc_skull_stripped.nii";
-    std::string filename_DWI = "C:\\Users\\yohan\\Documents\\ISLES-2022\\ISLES-2022\\sub-strokecase0115\\ses-0001\\dwi\\sub-strokecase0115_ses-0001_dwi.nii\\sub-Stroke29_iso_dwi_skull_stripped.nii";
+    ofstream logFile("C:\\Users\\yohan\\source\\repos\\ISLES\\log.txt", std::ios::trunc);
+
+    string filename_FLAIR = "C:\\Users\\yohan\\Documents\\ISLES-2022\\ISLES-2022\\sub-strokecase0115\\ses-0001\\anat\\sub-strokecase0115_ses-0001_FLAIR.nii\\sub-strokecase0115_ses-0001_FLAIR.nii";
+    string filename_ADC = "C:\\Users\\yohan\\Documents\\ISLES-2022\\ISLES-2022\\sub-strokecase0115\\ses-0001\\dwi\\sub-strokecase0115_ses-0001_adc.nii\\sub-Stroke29_iso_adc_skull_stripped.nii";
+    string filename_DWI = "C:\\Users\\yohan\\Documents\\ISLES-2022\\ISLES-2022\\sub-strokecase0115\\ses-0001\\dwi\\sub-strokecase0115_ses-0001_dwi.nii\\sub-Stroke29_iso_dwi_skull_stripped.nii";
 
 
     
-
+    // Initialise CNNetwork object from CNN class
     CNN CNNetwork;
-
-    writeToLog("Trying to open file at: " + filename_ADC);
-    CNNetwork.readNiftiHeader(filename_ADC, false);
+    // WILL ADD FUNCTIONALITY TO ITERATE OVER ALL 200 TEST FILES i.e. 800 total, inc. mask
+    // Open ADC file
+    writeToLog("Trying to open ADC file at: " + filename_ADC);
+    CNNetwork.readNifti(filename_ADC, false);
     writeToLog("Completed reading ADC.");
-    CNNetwork.clear();
+    CNNetwork.clear(); // Clear to just set DWI file as resample target as ADC/DWI are same anyways
 
-    writeToLog("Trying to open file at: " + filename_DWI);
-    CNNetwork.readNiftiHeader(filename_DWI, false);
+    // Open DWI file
+    writeToLog("Trying to open DWI file at: " + filename_DWI);
+    CNNetwork.readNifti(filename_DWI, false);
     writeToLog("Completed reading DWI.");
 
-    writeToLog("Trying to open file at: " + filename_FLAIR);
-    CNNetwork.readNiftiHeader(filename_FLAIR, true);
+    //Open FLAIR file
+    writeToLog("Trying to open FLAIR file at: " + filename_FLAIR);
+    CNNetwork.readNifti(filename_FLAIR, true);
     writeToLog("Completed reading FLAIR.");
+    writeToLog("All channels ready for convolution. Initialising filter.");
 
-    //CNNetwork.initialiseFilter(CNNetwork.filter, 1, 3, 3, 3);
-    //CNNetwork.convolve(CNNetwork.gridChannels, CNNetwork.filter, CNNetwork.convolveGrid, 1);
-    
+    CNNetwork.initialiseFilter()
+
+
+
+    //////////////////////////////
+    // TO BE REWRITTEN FOR GUI!!//
+    //////////////////////////////
+    writeToLog("X for slice where X axis is const.");
+    writeToLog("Y");
+    writeToLog("Z");
+
+    string reply;
+    cin >> reply;
+    writeToLog("Enter slice");
+    int slice;
+    cin >> slice;
+    if (reply == "X") {
+        for (int k = 0; k < CNNetwork.gridChannels.size(); ++k) {
+            writeToLog("Grid" + to_string(k) + ": ");
+            endLine();
+            for (int i = CNNetwork.gridChannels[k].size() - 1; i >= 0; --i) {
+                for (int j = 0; j < CNNetwork.gridChannels[k][0].size(); ++j) {
+                    if (CNNetwork.gridChannels[k][i][j][slice] > 0.9) {
+                        writeToLogNoLine("@");
+                    }
+                    else if (CNNetwork.gridChannels[k][i][j][slice] > 0.8) {
+                        writeToLogNoLine("%");
+                    }
+                    else if (CNNetwork.gridChannels[k][i][j][slice] > 0.7) {
+                        writeToLogNoLine("#");
+                    }
+                    else if (CNNetwork.gridChannels[k][i][j][slice] > 0.6) {
+                        writeToLogNoLine("*");
+                    }
+                    else if (CNNetwork.gridChannels[k][i][j][slice] > 0.5) {
+                        writeToLogNoLine("+");
+                    }
+                    else if (CNNetwork.gridChannels[k][i][j][slice] > 0.4) {
+                        writeToLogNoLine("=");
+                    }
+                    else if (CNNetwork.gridChannels[k][i][j][slice] > 0.3) {
+                        writeToLogNoLine("~");
+                    }
+                    else if (CNNetwork.gridChannels[k][i][j][slice] > 0.2) {
+                        writeToLogNoLine("-");
+                    }
+                    else if (CNNetwork.gridChannels[k][i][j][slice] > 0.1) {
+                        writeToLogNoLine(",");
+                    }
+                    else if (CNNetwork.gridChannels[k][i][j][slice] > 0) {
+                        writeToLogNoLine(".");
+                    }
+                    else if (CNNetwork.gridChannels[k][i][j][slice] == 0) {
+                        writeToLogNoLine(" ");
+                    }
+                }
+                endLine();
+            }
+        }
+    }
+    else if (reply == "Y") {
+        for (int k = 0; k < CNNetwork.gridChannels.size(); ++k) {
+            writeToLog("Grid" + to_string(k) + ": ");
+            endLine();
+            for (int i = CNNetwork.gridChannels[k].size() - 1; i >= 0; --i) {
+                for (int j = 0; j < CNNetwork.gridChannels[k][0][0].size(); ++j) {
+                    if (CNNetwork.gridChannels[k][i][slice][j] > 0.9) {
+                        writeToLogNoLine("@");
+                    }
+                    else if (CNNetwork.gridChannels[k][i][slice][j] > 0.8) {
+                        writeToLogNoLine("%");
+                    }
+                    else if (CNNetwork.gridChannels[k][i][slice][j] > 0.7) {
+                        writeToLogNoLine("#");
+                    }
+                    else if (CNNetwork.gridChannels[k][i][slice][j] > 0.6) {
+                        writeToLogNoLine("*");
+                    }
+                    else if (CNNetwork.gridChannels[k][i][slice][j] > 0.5) {
+                        writeToLogNoLine("+");
+                    }
+                    else if (CNNetwork.gridChannels[k][i][slice][j] > 0.4) {
+                        writeToLogNoLine("=");
+                    }
+                    else if (CNNetwork.gridChannels[k][i][slice][j] > 0.3) {
+                        writeToLogNoLine("~");
+                    }
+                    else if (CNNetwork.gridChannels[k][i][slice][j] > 0.2) {
+                        writeToLogNoLine("-");
+                    }
+                    else if (CNNetwork.gridChannels[k][i][slice][j] > 0.1) {
+                        writeToLogNoLine(",");
+                    }
+                    else if (CNNetwork.gridChannels[k][i][slice][j] > 0) {
+                        writeToLogNoLine(".");
+                    }
+                    else if (CNNetwork.gridChannels[k][i][slice][j] == 0) {
+                        writeToLogNoLine(" ");
+                    }
+                }
+                endLine();
+            }
+        }
+    }
+    else if (reply == "Z") {
+        for (int k = 0; k < CNNetwork.gridChannels.size(); ++k) {
+            writeToLog("Grid" + to_string(k) + ": ");
+            endLine();
+            for (int i = CNNetwork.gridChannels[k][0].size() - 1; i >= 0; --i) {
+                for (int j = 0; j < CNNetwork.gridChannels[k][0][0].size(); ++j) {
+                    if (CNNetwork.gridChannels[k][slice][i][j] > 0.9) {
+                        writeToLogNoLine("@");
+                    }
+                    else if (CNNetwork.gridChannels[k][slice][i][j] > 0.8) {
+                        writeToLogNoLine("%");
+                    }
+                    else if (CNNetwork.gridChannels[k][slice][i][j] > 0.7) {
+                        writeToLogNoLine("#");
+                    }
+                    else if (CNNetwork.gridChannels[k][slice][i][j] > 0.6) {
+                        writeToLogNoLine("*");
+                    }
+                    else if (CNNetwork.gridChannels[k][slice][i][j] > 0.5) {
+                        writeToLogNoLine("+");
+                    }
+                    else if (CNNetwork.gridChannels[k][slice][i][j] > 0.4) {
+                        writeToLogNoLine("=");
+                    }
+                    else if (CNNetwork.gridChannels[k][slice][i][j] > 0.3) {
+                        writeToLogNoLine("~");
+                    }
+                    else if (CNNetwork.gridChannels[k][slice][i][j] > 0.2) {
+                        writeToLogNoLine("-");
+                    }
+                    else if (CNNetwork.gridChannels[k][slice][i][j] > 0.1) {
+                        writeToLogNoLine(",");
+                    }
+                    else if (CNNetwork.gridChannels[k][slice][i][j] > 0) {
+                        writeToLogNoLine(".");
+                    }
+                    else if (CNNetwork.gridChannels[k][slice][i][j] == 0) {
+                        writeToLogNoLine(" ");
+                    }
+                }
+                endLine();
+            }
+        }
+    }
+
+
+
+
+
+
+
+
 
     //CODE END//
     

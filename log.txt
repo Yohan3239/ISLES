@@ -1,11 +1,12 @@
 Trying to open file at: C:\Users\yohan\Documents\ISLES-2022\ISLES-2022\sub-strokecase0115\ses-0001\dwi\sub-strokecase0115_ses-0001_adc.nii\sub-Stroke29_iso_adc_skull_stripped.nii
 HEADER METADATA
+Size of Header (check endianness...): 348
 Data type: 64
 Number of Dimensions: 3
 X: 112
 Y: 112
 Z: 73
-pixX: -1.000000
+pixX: 2.000000
 pixY: 2.000000
 pixZ: 2.000000
 bit per voxel: 64
@@ -60,17 +61,19 @@ Conversion to float complete.
 Converting to 3D.
 Conversion to 3D complete. Ready for Normalisation.
 Normalising ADC/DWI grid.
+Normalising Maximum value: 4.320057
 Normalisation Finished. Inserting to gridChannels as channel.
 Insertion complete.
 Completed reading ADC.
 Trying to open file at: C:\Users\yohan\Documents\ISLES-2022\ISLES-2022\sub-strokecase0115\ses-0001\dwi\sub-strokecase0115_ses-0001_dwi.nii\sub-Stroke29_iso_dwi_skull_stripped.nii
 HEADER METADATA
+Size of Header (check endianness...): 348
 Data type: 64
 Number of Dimensions: 3
 X: 112
 Y: 112
 Z: 73
-pixX: -1.000000
+pixX: 2.000000
 pixY: 2.000000
 pixZ: 2.000000
 bit per voxel: 64
@@ -125,18 +128,20 @@ Conversion to float complete.
 Converting to 3D.
 Conversion to 3D complete. Ready for Normalisation.
 Normalising ADC/DWI grid.
+Normalising Maximum value: 1653.872925
 Normalisation Finished. Inserting to gridChannels as channel.
 Insertion complete.
 Completed reading DWI.
 Trying to open file at: C:\Users\yohan\Documents\ISLES-2022\ISLES-2022\sub-strokecase0115\ses-0001\anat\sub-strokecase0115_ses-0001_FLAIR.nii\sub-strokecase0115_ses-0001_FLAIR.nii
 HEADER METADATA
+Size of Header (check endianness...): 348
 Data type: 16
 Number of Dimensions: 3
 X: 253
 Y: 336
 Z: 336
-pixX: 1.000000
-pixY: 0.711536
+pixX: 0.711536
+pixY: 0.714286
 pixZ: 0.714286
 bit per voxel: 32
 Voxel offset: 352.000000
@@ -166,15 +171,33 @@ Resampling to Size (112, 112, 73).
 Compiling FLAIR affine matrix.
 Completed compiling FLAIR affine matrix.
 Multiplying Inverse of target affine matrix with FLAIR affine matrix.
-Multiplication complete.
+Multiplication complete. Result: 
+-0.499701 0.000628 -0.017284 57.706345
+0.001222 0.499703 -0.017198 48.213341
+-0.017252 0.017230 0.499405 14.794946
+0.000000 -0.000000 0.000000 1.0000000.711441 0.000897 -0.011613 -85.475105
+-0.000573 0.714011 0.019808 -101.272644
+0.011589 -0.019796 0.713917 -101.373581
+0.000000 0.000000 0.000000 1.000000-0.355708 0.000342 -0.006524 102.106873
+0.000384 0.357135 -0.002394 -0.753887
+-0.006496 0.002401 0.357075 -36.101910
+0.000000 0.000000 0.000000 1.000000
 Total size: 28562688
 Scaling.
 Scaling finished.
 Converting to 3D.
 Convert finished. Ready for Normalisation.
 Applying affine matrix to grid.
+applyAffineToGrid: Finished destination-driven resampling.
+837.414551
 Application complete.
 Normalising Transformed FLAIR grid.
+Normalising Maximum value: 2719.549072
 Normalisation Finished. Inserting to gridChannels as channel.
 Insertion complete.
 Completed reading FLAIR.
+Entering visualisation.
+X for slice where X axis is const.
+Y
+Z
+Enter slice

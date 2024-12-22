@@ -1,3 +1,5 @@
+﻿#include <algorithm>
+#include <limits> 
 #include <iostream>
 #include <fstream>
 #include <vector>
@@ -9,48 +11,51 @@
 #include "ISLES.h"
 #include "CNN.h"
 
+
 using namespace std;
 using namespace C;
 
-vector<vector<vector<int>>> input;
+// ALWAYS REMEMBER DATA IS IN ZYX NOT XYZ
 
 // Convert 1D NifTI data to a 3D matrix
 void CNN::convert1To3(vector<float>& voxels) {
-    voxelsGrid = vector<vector<vector<float>>>(width,
-        vector<vector<float>>(height,
-            vector<float>(depth)));
+    // Resize into a 3D vector with the correct dimensions (depth, height, width)
+    voxelsGrid.resize(depth, vector<vector<float>>(height, vector<float>(width, 0.f)));
 
     for (int x = 0; x < width; ++x) {
         for (int y = 0; y < height; ++y) {
             for (int z = 0; z < depth; ++z) {
-                int index = x * (height * depth) + y * depth + z; // Calculate index in the 1D array
-                voxelsGrid[x][y][z] = voxels[index];
+                // 1D -> 3D
+                voxelsGrid[z][y][x] = voxels[(z * (height * width)) + (y * width) + x];
             }
         }
     }
 }
 
-// Read Header file
-void CNN::readNiftiHeader(const string& filename, bool bFlair) { 
-    bIsFlair = bFlair;
+////////////////////////
+// Reading NIFTI file //
+////////////////////////
+void CNN::readNifti(const string& filename, bool bFlair) { 
+    bIsFlair = bFlair; //is flair file?
     ifstream file(filename, ios::binary); // Binary file
     if (!file.is_open()) {
-        writeToLog(".nii File open Error");
+        writeToLog("Error: .nii open failure"); // For robustness
     }
 
     NiftiHeader header;
     file.read(reinterpret_cast<char*>(&header), 348); // Read the first 348 bytes, which is the header
     if (file.fail()) {
-        writeToLog("Error reading Header");
+        writeToLog("Error: Could not read header"); // For robustness
         file.close();
         return;
     }
 
-    // Header metadata reading
+    // Header metadata reading into header struct (first 348 bytes)
     writeToLog("HEADER METADATA");
+    writeToLog("Size of Header (check endianness...): " + to_string(header.sizeof_hdr));
     writeToLog("Data type: " + to_string(header.datatype));
     writeToLog("Number of Dimensions: " + to_string(header.dim[0]) + "\nX: " + to_string(header.dim[1]) + "\nY: " + to_string(header.dim[2]) + "\nZ: " + to_string(header.dim[3]));
-    writeToLog("pixX: " + to_string(header.pixdim[0]) + "\npixY: " + to_string(header.pixdim[1]) + "\npixZ: " + to_string(header.pixdim[2]));
+    writeToLog("pixX: " + to_string(header.pixdim[1]) + "\npixY: " + to_string(header.pixdim[2]) + "\npixZ: " + to_string(header.pixdim[3]));
     writeToLog("bit per voxel: " + to_string(header.bitpix));
     writeToLog("Voxel offset: " + to_string(header.vox_offset));
     writeToLog("scl_slope: " + to_string(header.scl_slope));
@@ -66,15 +71,17 @@ void CNN::readNiftiHeader(const string& filename, bool bFlair) {
     endLine();
     
     //Reading bytes 349 onwards into a 3D matrix//
-    
-    width = header.dim[1]; // X
-    height = header.dim[2]; // Y
-    depth = header.dim[3]; // Z
-    
+    width = header.dim[1]; // size of X
+    height = header.dim[2]; // size of Y
+    depth = header.dim[3]; // size of Z
     int numVoxels = width * height * depth; // Total number of voxels
 
-    // Transformations and Resampling
-    if (!bFlair) { // Is target file
+
+
+    ////////////////////////////////////
+    // Transformations and Resampling //
+    ////////////////////////////////////
+    if (!bFlair) { // Is file with target voxel space
         
         resultWidth = width; // If the file is not being resampled, set the target resample dimensions as own dimensions
         resultHeight = height; 
@@ -82,15 +89,18 @@ void CNN::readNiftiHeader(const string& filename, bool bFlair) {
         
         // AFFINE MATRIX
         writeToLog("Compiling ADC/DWI affine matrix.");
+
         vector<float> vecX = { header.srow_x[0], header.srow_x[1], header.srow_x[2], header.srow_x[3] };
         vector<float> vecY = { header.srow_y[0], header.srow_y[1], header.srow_y[2], header.srow_y[3] };
         vector<float> vecZ = { header.srow_z[0], header.srow_z[1], header.srow_z[2], header.srow_z[3] };
+        // Initialise target affine matrix with data from header
         targetAffineMatrix.push_back(vecX);
         targetAffineMatrix.push_back(vecY);
         targetAffineMatrix.push_back(vecZ);
-        targetAffineMatrix.push_back(BottomAffineVector);
+        targetAffineMatrix.push_back(BottomAffineVector); 
+
         writeToLog("Completed compiling ADC/DWI affine matrix.");
-        writeToLog("Inverting ADC/DWI affine Matrix.");
+        writeToLog("Inverting ADC/DWI affine Matrix: ");
         for (const auto& row : targetAffineMatrix) {
             for (const auto& element : row) {
                 writeToLog(to_string(element));
@@ -100,80 +110,137 @@ void CNN::readNiftiHeader(const string& filename, bool bFlair) {
         writeToLog("Completed inverting matrix.");
     }
     else { // is flair file!!
-        writeToLog("Resampling to Size (" + to_string(resultWidth) + ", " + to_string(resultHeight) + ", " + to_string(resultDepth) + ")."); // Resample
+        writeToLog("Resampling to Size (" + to_string(resultWidth) + ", " + to_string(resultHeight) + ", " + to_string(resultDepth) + ").");
 
         //AFFINE MATRIX
         writeToLog("Compiling FLAIR affine matrix.");
         vector<float> vecX = { header.srow_x[0], header.srow_x[1], header.srow_x[2], header.srow_x[3] };
         vector<float> vecY = { header.srow_y[0], header.srow_y[1], header.srow_y[2], header.srow_y[3] };
         vector<float> vecZ = { header.srow_z[0], header.srow_z[1], header.srow_z[2], header.srow_z[3] };
+        // Initialise target affine matrix with data from header
         flairAffineMatrix.push_back(vecX);
         flairAffineMatrix.push_back(vecY);
         flairAffineMatrix.push_back(vecZ);
         flairAffineMatrix.push_back(BottomAffineVector);
         writeToLog("Completed compiling FLAIR affine matrix.");
 
-        writeToLog("Multiplying Inverse of target affine matrix with FLAIR affine matrix.");
-        matrixAffineMultiplication(targetAffineInverseMatrix, flairAffineMatrix, finalAffineMatrix);
-        writeToLog("Multiplication complete.");
- 
+        writeToLog("Multiplying Inverse of target affine matrix with FLAIR affine matrix."); 
+
+        // Using inverse of target and then original affine matrix, obtaining a matrix that maps original grid to target grid voxel space
+        matrixAffineMultiplication(targetAffineInverseMatrix, flairAffineMatrix, finalAffineMatrix); 
+
+        writeToLog("Multiplication complete. Result: ");
+
+        // Simple output sequence
+        std::string output;
+        for (int i = 0; i < 4; ++i) {
+            for (int j = 0; j < 4; ++j) {
+                output += std::to_string(targetAffineInverseMatrix[i][j]);
+                if (j < 3) output += " "; // Space between elements
+            }
+            if (i < 3) output += "\n"; // New line between rows
+        }
+        for (int i = 0; i < 4; ++i) {
+            for (int j = 0; j < 4; ++j) {
+                output += std::to_string(flairAffineMatrix[i][j]);
+                if (j < 3) output += " "; // Space between elements
+            }
+            if (i < 3) output += "\n"; // New line between rows
+        }
+        for (int i = 0; i < 4; ++i) {
+            for (int j = 0; j < 4; ++j) {
+                output += std::to_string(finalAffineMatrix[i][j]);
+                if (j < 3) output += " "; // Space between elements
+            }
+            if (i < 3) output += "\n"; // New line between rows
+        }
+        writeToLog(output);
     }
-    writeToLog("Total size: " + to_string(numVoxels));
+
+    /////////////////////////////////
+    // Actual voxel reading (348+) //
+    /////////////////////////////////
     switch (header.datatype) {
     case 16:
-        process16NiftiData(filename, numVoxels, header.vox_offset, header.scl_slope, header.scl_inter, header.bitpix); // If datatype = 16, which is float32, store as vector of floats directly
+        // float
+        process16NiftiData(filename, numVoxels, header.vox_offset, header.scl_slope, header.scl_inter, header.bitpix); 
         break;
     case 64:
-        process64NiftiData(filename, numVoxels, header.vox_offset, header.scl_slope, header.scl_inter, header.bitpix); // If datatype = 64, which is float64, store as vector of floats by converting doubles to floats
+        // double -> float (data loss, but better this way because my laptop may not survive processing doubles
+        process64NiftiData(filename, numVoxels, header.vox_offset, header.scl_slope, header.scl_inter, header.bitpix); 
         break;
     default:
-        process16NiftiData(filename, numVoxels, header.vox_offset, header.scl_slope, header.scl_inter, header.bitpix); // Defaults to 16
+        // defaults to float
+        process16NiftiData(filename, numVoxels, header.vox_offset, header.scl_slope, header.scl_inter, header.bitpix);
         return;
     }
 
 }
-// Process Nifti data (float)
+
+////////////////////////////////
+// Process Nifti data (float) //
+////////////////////////////////
 void CNN::process16NiftiData(const string& filename, int numVoxels, float vox_offset, float scl_slope, float scl_inter, int bitpix) {
 
-    vector<float> voxels(numVoxels); // Store data as float
+    vector<float> voxels(numVoxels, -1.0f); // Store data as float, initialise as -1 to avoid 0 everywhere confusion
     ifstream file(filename, ios::binary); 
-    file.seekg(static_cast<streamoff>(vox_offset), ios::beg); // Move to Offset
-    file.read(reinterpret_cast<char*>(voxels.data()), numVoxels * bitpix / 8); // Read the correct number of voxels
+    if (!file.is_open()) {
+        writeToLog("Error: Failed to open file."); // For robustness
+        return;
+    }
+    file.seekg(static_cast<streamoff>(vox_offset), ios::beg); // Move to Offset (I think default 352?)
+    if (file.tellg() != static_cast<streamoff>(vox_offset)) {
+        writeToLog("Error: File seek failed."); // For robustness
+    }
+    file.read(reinterpret_cast<char*>(voxels.data()), numVoxels * bitpix / 8); // Read the correct number of bits, number of voxels * bits per voxel
+
     writeToLog("Scaling.");
     for (auto& voxel : voxels) {
-        voxel = voxel * scl_slope + scl_inter; // Scale data using Header values
+        
+        voxel = voxel * scl_slope + scl_inter; // Scale data using Header values (Seems to all be 1 and 0 though...)
+        
     }
     writeToLog("Scaling finished.");
-
+    
+    
     writeToLog("Converting to 3D.");
-    convert1To3(voxels); // Convert to 3D vector
+    convert1To3(voxels); // Converts to 3D vector, size [depth][height][width]
     writeToLog("Convert finished. Ready for Normalisation.");
-    if (bIsFlair) { 
+    if (bIsFlair) { // If flair, voxel space different to ADC/DWI, therefore must apply transform to map
         writeToLog("Applying affine matrix to grid.");
-        applyAffineToGrid(voxelsGrid, transformGrid);
+        applyMatToGrid(voxelsGrid, transformGrid); // Applying matrix to original grid
         writeToLog("Application complete.");
 
         writeToLog("Normalising Transformed FLAIR grid.");
-        normalise(transformGrid);
-    } else {
-        writeToLog("Normalising ADC/DWI grid."); normalise(voxelsGrid);
+        normalise(transformGrid); // Normalisation and insertion
+    } else { // If not flair, just normalise and insert as channel.
+
+        writeToLog("Normalising ADC/DWI grid."); 
+        normalise(voxelsGrid); // Normalisation and insertion
     }
-    
     file.close();
 }
 
-// Process Nifti data (double)
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// Process Nifti data (double), literally same as above but change values to float after reading //
+///////////////////////////////////////////////////////////////////////////////////////////////////
 void CNN::process64NiftiData(const string& filename, int numVoxels, float vox_offset, float scl_slope, float scl_inter, int bitpix) {
 
     vector<double> voxels(numVoxels);  // Temporarily store the data as double
     ifstream file(filename, ios::binary);
-    file.seekg(static_cast<streamoff>(vox_offset), ios::beg); // Move to Offset
+    if (!file.is_open()) {
+        writeToLog("Error: Failed to open file.");
+        return;
+    }
+    file.seekg(static_cast<streamoff>(vox_offset), ios::beg);
+    if (file.tellg() != static_cast<streamoff>(vox_offset)) {
+        writeToLog("Error: File seek failed.");
+    }
+    file.read(reinterpret_cast<char*>(voxels.data()), numVoxels * bitpix / 8);
 
-    file.read(reinterpret_cast<char*>(voxels.data()), numVoxels * bitpix / 8); //Read the correct number of voxels
-    
     writeToLog("Scaling.");
     for (auto& voxel : voxels) {
-        voxel = voxel * scl_slope + scl_inter;  // Scale data using Header values
+        voxel = voxel * scl_slope + scl_inter;  
     }
     writeToLog("Scaling finished.");
 
@@ -185,12 +252,12 @@ void CNN::process64NiftiData(const string& filename, int numVoxels, float vox_of
     writeToLog("Conversion to float complete.");
 
     writeToLog("Converting to 3D.");
-    convert1To3(floatVoxels); // Convert to 3D vector
+    convert1To3(floatVoxels); // Generate grid using floats
     writeToLog("Conversion to 3D complete. Ready for Normalisation.");
 
     if (bIsFlair) { 
         writeToLog("Applying affine matrix to grid.");
-        applyAffineToGrid(voxelsGrid, transformGrid);
+        applyMatToGrid(voxelsGrid, transformGrid);
         writeToLog("Application complete.");
 
         writeToLog("Normalising Transformed FLAIR grid."); 
@@ -203,88 +270,77 @@ void CNN::process64NiftiData(const string& filename, int numVoxels, float vox_of
     file.close();
 }
 
-// ReLU activation function
+// ReLU function to clamp above 0
 float CNN::relu(float x) {
     return max(0.0f, x);
 }
 
-// Normalises all values into [0,1]
+///////////////////
+// Normalisation //
+///////////////////
 void CNN::normalise(vector<vector<vector<float>>>& grid) {
     float max_value = 0;
-    for (const auto& slice : grid) {
-        for (const auto& row : slice) {
-            for (const auto& voxel : row) {
-                max_value = max(max_value, voxel); // Gets maximum value
+    for (auto& slice : grid) {
+        for (auto& row : slice) {
+            for (auto& voxel : row) {
+                max_value = max(max_value, voxel); // Gets maximum value of grid
             }
         }
     }
-
+    writeToLog("Normalising Maximum value: " + to_string(max_value));
     
     for (auto& slice : grid) {
         for (auto& row : slice) {
             for (auto& voxel : row) {
-                voxel /= max_value;  // Normalises to [0, 1] using maximum value
+                voxel /= max_value;  // Normalises to [0, 1] by dividing all by the maximum value
             }
         }
     }
     writeToLog("Normalisation Finished. Inserting to gridChannels as channel.");
-    insertGrid(grid); // Inserts the current 3D grid into 4D tensor as a channel
+    insertGrid(grid); // Inserts the current 3D grid into 4D tensor as a channel, order should be ADC, DWI, FLAIR, all mapped to the same voxel space.
     writeToLog("Insertion complete.");
 }
- 
-// Convolution Layer. Applies 3D filters to all 3D input tensors (FLAIR, ADC, DWI) into several 3D output tensors WIP
+
+///////////////////////
+// Convolution Layer //
+///////////////////////
 void CNN::convolve(
-    const vector<vector<vector<vector<float>>>>& input, // 4D Input tensor (3D volume x Channels)
-    const vector<vector<vector<vector<vector<float>>>>>& kernels, // 3D kernels (3D volume x Channels x Output)
-    vector<vector<vector<vector<float>>>>& output, // 4D Output tensor (3D volume x Output)
+    const vector<vector<vector<vector<float>>>>& gridChannels, // 4D Input tensor ([Channels][z][y][x])
+    const vector<vector<vector<vector<vector<float>>>>>& filterChannels, // [output][3][z][y][x]
+    vector<vector<vector<vector<float>>>>& outputChannels, // 4D Output tensor (3D volume x Output)
     int stride // Stride value
 ) {
-    writeToLog("convolving...");
-    int inputChannels = input.size();
-    int inputWidth = input[0].size();
-    int inputHeight = input[0][0].size();
-    int inputDepth = input[0][0][0].size();
-    if (inputChannels == gridChannels.size() && inputWidth == resultWidth && inputHeight == resultHeight && inputDepth == resultDepth) {
-        writeToLog("Input size as expected.");
-    }
-    else writeToLog("Input size incorrect. Error.");
-    int filterChannels = input.size();
-    int filterWidth = input[0].size();
-    int filterHeight = input[0][0].size();
-    int filterDepth = input[0][0][0].size();
-
-
+    // TODO: Add convolution 
 }
 
-void CNN::initialiseFilter(vector<vector<vector<vector<float>>>>& filter,
-    int filterChannels, int filterWidth, int filterHeight, int filterDepth) {
-    writeToLog("Initialising Filters.");
+////////////////////////
+// Initialise Filters //
+////////////////////////
+void CNN::initialiseFilters(int numOfOutput, int filterWidth, int filterHeight, int filterDepth) {
+    // Initialise multiple filter channels (input channel always 3 bc ADC, DWI, FLAIR)
+    // filterChannels: [Output Channels][3][depth][height][width]
+    filterChannels.resize(numOfOutput, vector<vector<vector<vector<float>>>>(3, vector<vector<vector<float>>>(filterDepth, vector<vector<float>>(filterHeight, vector<float>(filterWidth)))));
 
-    // Initialise filter tensor
-    filter.resize(filterChannels,
-        vector<vector<vector<float>>>(filterWidth,
-            vector<vector<float>>(filterHeight,
-                vector<float>(filterDepth))));
-    
     // Randomly initialize filter values
-    random_device rd;
-    mt19937 gen(rd());
-    uniform_real_distribution<float> dis(-1.0f, 1.0f);  // Random values between -1 and 1
-
-    for (int f = 0; f < filterChannels; ++f) {
-        for (int w = 0; w < filterWidth; ++w) {
-            for (int h = 0; h < filterHeight; ++h) {
-                for (int d = 0; d < filterDepth; ++d) {
-                    filter[f][w][h][d] = dis(gen);  // Assign random value
+    random_device randomDevice;
+    mt19937 gen(randomDevice());
+    uniform_real_distribution<float> dis(-1.0f, 1.0f);  // Produces random values between -1 and 1
+   
+    for (auto& i : filterChannels) {
+        for (auto& j : i) {
+            for (auto& k : j) {
+                for (auto& l : k) {
+                    for (auto& m : l) {
+                        m = dis(gen); // Fill each value
+                    }
                 }
             }
         }
     }
-    writeToLog("Filter Initialisation Complete.");
 }
 
 void CNN::clearAll() {
-    gridChannels.clear(); // Clear Channels for next set of files
+    gridChannels.clear(); // Clear entire 4D tensor for next set of files
 }
 
 void CNN::clear() {
@@ -297,73 +353,101 @@ void CNN::clear() {
     finalAffineMatrix = createDefaultAffineMatrix();
 
 }
+
 void CNN::insertGrid(const vector<vector<vector<float>>>& grid) {
     gridChannels.push_back(grid); // Push 3D grid into 4D tensor
 }
 
-// Trilinear Interpolation...from scratch i dont wanna do this anym
-float triLerp(const vector<vector<vector<float>>>& originalImage, float x, float y, float z) {
-    int x0 = static_cast<int>(std::floor(x));
-    int x1 = x0 + 1;
+/////////////////////////////
+// Trilinear Interpolation //
+/////////////////////////////
+float CNN::triLerp(const vector<vector<vector<float>>>& inputGrid, float x, float y, float z) {
+    
+    
+    int z0 = static_cast<int>(std::floor(z)); // Clamps to nearest rounded down integer
+    int z1 = z0 + 1;                          // Clamps to nearest rounded up integer
     int y0 = static_cast<int>(std::floor(y));
     int y1 = y0 + 1;
-    int z0 = static_cast<int>(std::floor(z));
-    int z1 = z0 + 1;
+    int x0 = static_cast<int>(std::floor(x));
+    int x1 = x0 + 1;
 
-    float xd = x - x0;
+    float zd = z - z0; // Difference between actual value and clamped floor value
     float yd = y - y0;
-    float zd = z - z0;
+    float xd = x - x0;
 
-    // Ensure indices are within bounds
-    x0 = max(0, min(x0, (int)originalImage.size() - 1));
-    x1 = max(0, min(x1, (int)originalImage.size() - 1));
-    y0 = max(0, min(y0, (int)originalImage[0].size() - 1));
-    y1 = max(0, min(y1, (int)originalImage[0].size() - 1));
-    z0 = max(0, min(z0, (int)originalImage[0][0].size() - 1));
-    z1 = max(0, min(z1, (int)originalImage[0][0].size() - 1));
+    // Clamp clamped values into [0, available grid size]
+    z0 = max(0, min(z0, (int)inputGrid.size() - 1));
+    z1 = max(0, min(z1, (int)inputGrid.size() - 1));
+    y0 = max(0, min(y0, (int)inputGrid[0].size() - 1));
+    y1 = max(0, min(y1, (int)inputGrid[0].size() - 1));
+    x0 = max(0, min(x0, (int)inputGrid[0][0].size() - 1));
+    x1 = max(0, min(x1, (int)inputGrid[0][0].size() - 1));
 
-    // Trilinear interpolation
-    float c00 = originalImage[x0][y0][z0] * (1 - xd) + originalImage[x1][y0][z0] * xd;
-    float c01 = originalImage[x0][y0][z1] * (1 - xd) + originalImage[x1][y0][z1] * xd;
-    float c10 = originalImage[x0][y1][z0] * (1 - xd) + originalImage[x1][y1][z0] * xd;
-    float c11 = originalImage[x0][y1][z1] * (1 - xd) + originalImage[x1][y1][z1] * xd;
+    // Get the 8 integer coordinates surrounding the fractional coordinate
+    float c000 = inputGrid[z0][y0][x0];
+    float c001 = inputGrid[z0][y0][x1];
+    float c010 = inputGrid[z0][y1][x0];
+    float c011 = inputGrid[z0][y1][x1];
+    float c100 = inputGrid[z1][y0][x0];
+    float c101 = inputGrid[z1][y0][x1];
+    float c110 = inputGrid[z1][y1][x0];
+    float c111 = inputGrid[z1][y1][x1];
 
-    float c0 = c00 * (1 - yd) + c10 * yd;
-    float c1 = c01 * (1 - yd) + c11 * yd;
+    // Interpolate through X
+    float c00 = c000 * (1.0f - xd) + c001 * xd; // Those are reversed from normal trilinear interpolation as coordinates are written [z][y][x] instead of [x][y][z]
+    float c01 = c010 * (1.0f - xd) + c011 * xd;
+    float c10 = c100 * (1.0f - xd) + c101 * xd;
+    float c11 = c110 * (1.0f - xd) + c111 * xd;
 
+    // Interpolate through Y
+    float c0 = c00 * (1.0f - yd) + c01 * yd;
+    float c1 = c10 * (1.0f - yd) + c11 * yd;
+
+    // Interpolate through Z
     return c0 * (1 - zd) + c1 * zd;
 }
 
+////////////////
 // TRANSFORMS //
+////////////////
 
 //Get Inverse of Affine matrix (4x4)
 bool CNN::inverseAffine(const vector<vector<float>>& mat, vector<vector<float>>& result) {
-    float det = 0;
-    // Get determinant
+
+    // Compute determinant
+    double det = 0.0; 
     for (int i = 0; i < 4; ++i) {
-        det += mat[0][i] *
-            (mat[1][(i + 1) % 4] * (mat[2][(i + 2) % 4] * mat[3][(i + 3) % 4] - mat[2][(i + 3) % 4] * mat[3][(i + 2) % 4]) -
-                mat[1][(i + 2) % 4] * (mat[2][(i + 1) % 4] * mat[3][(i + 3) % 4] - mat[2][(i + 3) % 4] * mat[3][(i + 1) % 4]) +
-                mat[1][(i + 3) % 4] * (mat[2][(i + 1) % 4] * mat[3][(i + 2) % 4] - mat[2][(i + 2) % 4] * mat[3][(i + 1) % 4]));
+        double minor =
+            mat[1][(i + 1) % 4] * (mat[2][(i + 2) % 4] * mat[3][(i + 3) % 4] - mat[2][(i + 3) % 4] * mat[3][(i + 2) % 4]) -
+            mat[1][(i + 2) % 4] * (mat[2][(i + 1) % 4] * mat[3][(i + 3) % 4] - mat[2][(i + 3) % 4] * mat[3][(i + 1) % 4]) +
+            mat[1][(i + 3) % 4] * (mat[2][(i + 1) % 4] * mat[3][(i + 2) % 4] - mat[2][(i + 2) % 4] * mat[3][(i + 1) % 4]);
+        
+        det += mat[0][i] * (i % 2 == 0 ? 1 : -1) * minor;
     }
-    if (det == 0) {
-        writeToLog("Affine matrix is not invertible.");
+
+    if (det == 0) { 
+        writeToLog("Matrix is not invertible.");
         return false;
     }
-    // Algorithm I found to directly calculate the inverse matrix of 4x4
+
+    // Compute the cofactor matrix
     for (int i = 0; i < 4; ++i) {
         for (int j = 0; j < 4; ++j) {
-            result[i][j] =
-                ((mat[(j + 1) % 4][(i + 1) % 4] * (mat[(j + 2) % 4][(i + 2) % 4] * mat[(j + 3) % 4][(i + 3) % 4] - mat[(j + 2) % 4][(i + 3) % 4] * mat[(j + 3) % 4][(i + 2) % 4])) -
-                (mat[(j + 1) % 4][(i + 2) % 4] * (mat[(j + 2) % 4][(i + 1) % 4] * mat[(j + 3) % 4][(i + 3) % 4] - mat[(j + 2) % 4][(i + 3) % 4] * mat[(j + 3) % 4][(i + 1) % 4])) +
-                (mat[(j + 1) % 4][(i + 3) % 4] * (mat[(j + 2) % 4][(i + 1) % 4] * mat[(j + 3) % 4][(i + 2) % 4] - mat[(j + 2) % 4][(i + 2) % 4] * mat[(j + 3) % 4][(i + 1) % 4]))) *
-                1.0f/det;
+            double minor =
+                mat[(i + 1) % 4][(j + 1) % 4] * (mat[(i + 2) % 4][(j + 2) % 4] * mat[(i + 3) % 4][(j + 3) % 4] - mat[(i + 2) % 4][(j + 3) % 4] * mat[(i + 3) % 4][(j + 2) % 4]) -
+                mat[(i + 1) % 4][(j + 2) % 4] * (mat[(i + 2) % 4][(j + 1) % 4] * mat[(i + 3) % 4][(j + 3) % 4] - mat[(i + 2) % 4][(j + 3) % 4] * mat[(i + 3) % 4][(j + 1) % 4]) +
+                mat[(i + 1) % 4][(j + 3) % 4] * (mat[(i + 2) % 4][(j + 1) % 4] * mat[(i + 3) % 4][(j + 2) % 4] - mat[(i + 2) % 4][(j + 2) % 4] * mat[(i + 3) % 4][(j + 1) % 4]);
+
+            // Apply sign changes and determinant
+            result[j][i] = ((i + j) % 2 == 0 ? 1 : -1) * minor / det;
         }
     }
+    return true;
 }
 
-// Affine Matrix Multiply (4x4)
-void CNN::matrixAffineMultiplication(const AffineMatrix mat1, const AffineMatrix mat2, AffineMatrix resultMat) {
+// Affine Matrix Multiplication (4x4)
+void CNN::matrixAffineMultiplication(const AffineMatrix& mat1, const AffineMatrix& mat2, AffineMatrix& resultMat) {
+    
     for (int i = 0; i < 4; i++) {
         for (int j = 0; j < 4; j++) {
             for (int u = 0; u < 4; u++) {
@@ -373,32 +457,56 @@ void CNN::matrixAffineMultiplication(const AffineMatrix mat1, const AffineMatrix
     }
 }
 
-// Apply the final affine matrix to a point in a grid (i.e. flair file data)
-vector<float> CNN::applyAffineToPoint(const AffineMatrix mat, float x, float y, float z) {
+// Apply the final affine matrix to a point(x,y,z)
+vector<float> CNN::applyMatToPoint(const AffineMatrix& mat, float x, float y, float z) {
     vector<float> point = { x, y, z, 1 };
     vector<float> result(4, 0.0f);
     for (int i = 0; i < 4; ++i) {
         for (int j = 0; j < 4; ++j) {
-            result[i] += mat[i][j] * point[j];
+            result[i] += mat[i][j] * point[j]; // Matrix * Point
         }
     }
     return { result[0], result[1], result[2] };
 }
 
-void CNN::applyAffineToGrid(const vector<vector<vector<float>>>& grid, vector<vector<vector<float>>>& result) {
+/////////////////////////////////////
+// Apply transform to initial grid //
+/////////////////////////////////////
+void CNN::applyMatToGrid(
+    vector<vector<vector<float>>>& inputGrid,
+    vector<vector<vector<float>>>& resultGrid
+) {
+    // DESTINATION DRIVEN //
+    // This prevents gaps in resultGrid by ensuring literally every point in resultGrid has a corresponding point in inputGrid.
     
+    // Initialise resultGrid
+    resultGrid.resize(resultDepth, vector<vector<float>>(resultHeight, vector<float>(resultWidth, 0.0f)));
 
-    result.resize(resultWidth, vector<vector<float>>(resultHeight, vector<float>(resultDepth, 0.f)));
-    for (int i = 0; i < resultWidth; ++i) {
+    // Compute the inverse matrix of the final transform(inputGrid -> resultGrid) for (resultGrid -> inputGrid).
+    AffineMatrix inverseMatrix = createDefaultAffineMatrix(); // Didn't initialise this in header to avoid naming confusion...
+    bool invertible = inverseAffine(finalAffineMatrix, inverseMatrix);
+    if (!invertible) {
+        writeToLog("applyAffineToGrid: finalAffineMatrix is not invertible!");
+        return;
+    }
+
+    // Iterate over every coordinate in resultGrid and find its corresponding coordinate in inputGrid
+    for (int k = 0; k < resultDepth; ++k) {
         for (int j = 0; j < resultHeight; ++j) {
-            for (int k = 0; k < resultDepth; ++k) {
-                vector<float> resultPoint = applyAffineToPoint(finalAffineMatrix, i, j, k);
-                float x = resultPoint[0];
-                float y = resultPoint[1];
-                float z = resultPoint[2];
-                result[i][j][k] = triLerp(grid, x, y, z);
+            for (int i = 0; i < resultWidth; ++i) {
+                // Maps point in resultGrid to point in inputGrid
+                vector<float> inputCoords = applyMatToPoint(inverseMatrix, i, j, k);
+
+                float x = inputCoords[0];
+                float y = inputCoords[1];
+                float z = inputCoords[2];
+
+                // Use Trilinear interpolatation at those coords as they are not integers.
+                float interpolatedValue = triLerp(inputGrid, x, y, z);
+
+                // Store resultant value in resultGrid
+                resultGrid[k][j][i] = interpolatedValue;
             }
         }
-    }    
+    }
 }
-

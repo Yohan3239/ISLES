@@ -10,8 +10,10 @@ namespace C
 
     public:
 
+        // Is this file FLAIR?
         bool bIsFlair;
 
+        // Nifti Header struct to read header data into usable variables
         struct NiftiHeader {
             int sizeof_hdr;
             char data_type[10];
@@ -45,19 +47,19 @@ namespace C
             float srow_x[4], srow_y[4], srow_z[4];
             char intent_name[16];
             char magic[4];
-        }; // 348 byte struct to read Header data into // Struct to put header data into
+        };
 
-        float relu(float x); // RELU
+        float relu(float x); // RELu
 
-        void readNiftiHeader(const std::string& filename, bool bFlair); // Read Header data
+        void readNifti(const std::string& filename, bool bFlair); // Read Header data
 
-        void convert1To3(std::vector<float>& voxels); //1D to 3D data
+        void convert1To3(std::vector<float>& voxels); // 1D to 3D data
 
         void normalise(std::vector<std::vector<std::vector<float>>>& grid); // Normalise between [,0,1]
         void clearAll(); // Clear all values for next case
         void clear(); // Clear for next file
 
-        // Convolutional Layer
+        // Convolutional Layer, wip
         void convolve( 
             const std::vector<std::vector<std::vector<std::vector<float>>>>& input, // Input tensor
             const std::vector<std::vector<std::vector<std::vector<std::vector<float>>>>>& kernels, // Filters
@@ -65,24 +67,28 @@ namespace C
             int stride
         );
 
-        void initialiseFilter(std::vector<std::vector<std::vector<std::vector<float>>>>& filter,
-            int filter_channels, int filter_height, int filter_width, int filter_depth);
+        // Initialise randomised filter
+        void initialiseFilters(int numOfOutput, int filter_height, int filter_width, int filter_depth);
+
+        // Insert grid into 4D tensor
         void insertGrid(const std::vector<std::vector<std::vector<float>>>& grid);
 
+        // Trilinear interpolation to fix fractional coordinates after transform between voxel spaces
+        float triLerp(const std::vector<std::vector<std::vector<float>>>& inputGrid, float x, float y, float z);
+        // Processing different datatypes of NIFTI files
         void process16NiftiData(const std::string& filename, int numVoxels, float vox_offset, float scl_slope, float scl_inter, int bitpix);
         void process64NiftiData(const std::string& filename, int numVoxels, float vox_offset, float scl_slope, float scl_inter, int bitpix);
     private:
-        int width; // Resets for each file
-        int height; // Same as above
-        int depth; // Same as above
-
-        int resultWidth, resultHeight, resultDepth = 100; // What the dimensions should be resampled to. Updated from the resultant file.
+        int width, height, depth = 1; // Current file dimensions
+        int resultWidth, resultHeight, resultDepth = 1; // What the dimensions should be resampled to. Updated from the resultant file.
         
     public:
-        std::vector<std::vector<std::vector<std::vector<float>>>> filter;
+        
         std::vector<std::vector<std::vector<float>>> voxelsGrid; // Input data, dimension FLAIR
         std::vector<std::vector<std::vector<float>>> transformGrid; // Input data, transformed AND resampled using affine matrix, dimension ADC/DWI .
         std::vector<std::vector<std::vector<std::vector<float>>>> gridChannels;
+
+        std::vector<std::vector<std::vector<std::vector<std::vector<float>>>>> filterChannels; // All filters
         std::vector<std::vector<std::vector<std::vector<float>>>> convolveGrid; // Output through Convolutional layer
 
         // TRANSFORM STUFF //
@@ -108,25 +114,25 @@ namespace C
         AffineMatrix finalAffineMatrix = createDefaultAffineMatrix(); 
 
         /// <summary>
-        /// FLAIR quaternion -> FLAIR rotation matrix.
-        /// ADC/DWI quaternion -> ADC/DWI rotation matrix -> ADC/DWI inverse rotation matrix
-        /// FLAIR affine matrix
-        /// ADC/DWI affine matrix -> ADC/DWI inverse affine matrix
+        /// FLAIR affine matrix - A1. Maps FLAIR to common scanner space.
+        /// ADC/DWI affine matrix - A2. Maps ADC/DWI to common scanner space.
         /// 
-        /// Apply (FLAIR rotation mat * ADC/DWI inverse rotation mat) to FLAIR grid
-        /// Apply (FLAIR affine mat * ADC/DWI inverse affine mat)
-        /// 
-        /// ...
-        /// 
-        /// Resample
-        /// </summary>
+        /// To get both in same voxel space (i.e. ADC/DWI voxel space), must apply (A2^-1 * A1) to FLAIR grid.
+        /// Apply (A2^-1 * A1)^-1 to the ADC/DWI grid coordinates to map to FLAIR, then reverse to obtain values in FLAIR to resample to ADC/DWI voxel space.
+        /// </summary> 
 
-        
+        // Inverses affine matrix (or well, any 4x4 matrix)
         bool inverseAffine(const std::vector<std::vector<float>>& mat, std::vector<std::vector<float>>& result);
-        void matrixAffineMultiplication(const AffineMatrix mat1, const AffineMatrix mat2, AffineMatrix resultMat);
+        // Multiplies two affine matrices (or well, any 4x4 matrices)
+        void matrixAffineMultiplication(const AffineMatrix& mat1, const AffineMatrix& mat2, AffineMatrix& resultMat);
 
-        std::vector<float> applyAffineToPoint(const AffineMatrix mat, float x, float y, float z);
-        void applyAffineToGrid(const std::vector<std::vector<std::vector<float>>>& grid, std::vector<std::vector<std::vector<float>>>& result);
+        // Apply matrix to a point.
+        std::vector<float> applyMatToPoint(const AffineMatrix& mat, float x, float y, float z);
+        
+        // Uses above function to apply to grid
+        void applyMatToGrid(std::vector<std::vector<std::vector<float>>>& grid, std::vector<std::vector<std::vector<float>>>& result);
+
+
 
     };
 }
