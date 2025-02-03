@@ -49,7 +49,11 @@ namespace C
             char magic[4];
         };
 
-        float relu(float x); // RELu
+        // trying out 3 different activation functions?
+        float relu(float x); // ReLU
+        float sigmoid(float x); // sigmoid
+        float tanhActivation(float x); // tanh
+
 
         void readNifti(const std::string& filename, bool bFlair); // Read Header data
 
@@ -62,13 +66,18 @@ namespace C
         // Convolutional Layer, wip
         void convolve( 
             const std::vector<std::vector<std::vector<std::vector<float>>>>& input, // Input tensor
-            const std::vector<std::vector<std::vector<std::vector<std::vector<float>>>>>& kernels, // Filters
+            const std::vector<std::vector<std::vector<std::vector<std::vector<float>>>>>& filterChannels, // Filters
             std::vector<std::vector<std::vector<std::vector<float>>>>& output, // Output tensor
-            int stride
+            int stride,
+            int padding
         );
+        void calcFilterGradients(const std::vector<std::vector<std::vector<std::vector<float>>>>& input, const std::vector<std::vector<std::vector<std::vector<float>>>>& lossPrevGrad, const std::vector<std::vector<std::vector<std::vector<std::vector<float>>>>>& origFilters, std::vector<std::vector<std::vector<std::vector<std::vector<float>>>>>& lossFilterGrad, int stride);
+        void calcBiasGradients(const std::vector<std::vector<std::vector<std::vector<float>>>>& lossPrevGrad, std::vector<float>& resultBias);
 
+        void calcInputGradients(const std::vector<std::vector<std::vector<std::vector<float>>>>& input, const std::vector<std::vector<std::vector<std::vector<float>>>>& lossPrevGrad, const std::vector<std::vector<std::vector<std::vector<std::vector<float>>>>>& origFilters, std::vector<std::vector<std::vector<std::vector<float>>>>& resultInput, int stride);
+        void rotateFilter(std::vector<std::vector<std::vector<std::vector<std::vector<float>>>>>& filters);
         // Initialise randomised filter
-        void initialiseFilters(int numOfOutput, int filter_height, int filter_width, int filter_depth);
+        void initialiseFilters(std::vector<std::vector<std::vector<std::vector<std::vector<float>>>>>& filterChannels, int numOfOutput, int numOfInput, int filterWidth, int filterHeight, int filterDepth, bool isReLU);
 
         // Insert grid into 4D tensor
         void insertGrid(const std::vector<std::vector<std::vector<float>>>& grid);
@@ -78,6 +87,7 @@ namespace C
         // Processing different datatypes of NIFTI files
         void process16NiftiData(const std::string& filename, int numVoxels, float vox_offset, float scl_slope, float scl_inter, int bitpix);
         void process64NiftiData(const std::string& filename, int numVoxels, float vox_offset, float scl_slope, float scl_inter, int bitpix);
+        void process512NiftiData(const std::string& filename, int numVoxels, float vox_offset, float scl_slope, float scl_inter, int bitpix);
     private:
         int width, height, depth = 1; // Current file dimensions
         int resultWidth, resultHeight, resultDepth = 1; // What the dimensions should be resampled to. Updated from the resultant file.
@@ -88,9 +98,26 @@ namespace C
         std::vector<std::vector<std::vector<float>>> transformGrid; // Input data, transformed AND resampled using affine matrix, dimension ADC/DWI .
         std::vector<std::vector<std::vector<std::vector<float>>>> gridChannels;
 
-        std::vector<std::vector<std::vector<std::vector<std::vector<float>>>>> filterChannels; // All filters
-        std::vector<std::vector<std::vector<std::vector<float>>>> convolveGrid; // Output through Convolutional layer
+        std::vector<std::vector<std::vector<std::vector<std::vector<float>>>>> filterChannels1; // All filters
+        std::vector<std::vector<std::vector<std::vector<std::vector<float>>>>> filterChannels2; // All filters
+        std::vector<std::vector<std::vector<std::vector<std::vector<float>>>>> filterChannels3; // All filters
+        std::vector<std::vector<std::vector<std::vector<float>>>> convolvedChannels1; // Output through Convolutional layer
+        std::vector<std::vector<std::vector<std::vector<float>>>> pooledChannels;
+        std::vector<std::vector<std::vector<std::vector<float>>>> convolvedChannels2; // Output through Convolutional layer
+      
+        std::vector<std::vector<std::vector<std::vector<float>>>> convolvedChannels3; // Output through Convolutional layer
+        
+        std::vector<std::vector<std::vector<std::vector<std::vector<float>>>>> outputFilterChannels;
+        std::vector<std::vector<std::vector<std::vector<float>>>> outputChannel; // FINAL output after all convolution
+        std::vector<std::vector<std::vector<float>>> finalUpsampledGrid;
+        std::vector<std::vector<std::vector<float>>> finalBinaryGrid; 
 
+        std::vector<std::vector<std::vector<float>>> groundTruthGrid;
+        std::vector<std::vector<std::vector<float>>> gradientOfLoss;
+
+        std::vector<std::vector<std::vector<float>>> gradientOfFilter;
+        std::vector<std::vector<std::vector<float>>> gradientOfWeight;
+        std::vector<std::vector<std::vector<float>>> gradientOfBias;
         // TRANSFORM STUFF //
         // Affine Transformation Matrix (4x4)
         typedef std::vector<std::vector<float>> AffineMatrix;
@@ -113,13 +140,17 @@ namespace C
 
         AffineMatrix finalAffineMatrix = createDefaultAffineMatrix(); 
 
-        /// <summary>
+
+        // in summary ...
+        
         /// FLAIR affine matrix - A1. Maps FLAIR to common scanner space.
-        /// ADC/DWI affine matrix - A2. Maps ADC/DWI to common scanner space.
-        /// 
+        ///ADC/DWI affine matrix - A2. Maps ADC/DWI to common scanner space.
+        
         /// To get both in same voxel space (i.e. ADC/DWI voxel space), must apply (A2^-1 * A1) to FLAIR grid.
         /// Apply (A2^-1 * A1)^-1 to the ADC/DWI grid coordinates to map to FLAIR, then reverse to obtain values in FLAIR to resample to ADC/DWI voxel space.
-        /// </summary> 
+        
+
+        
 
         // Inverses affine matrix (or well, any 4x4 matrix)
         bool inverseAffine(const std::vector<std::vector<float>>& mat, std::vector<std::vector<float>>& result);
@@ -131,8 +162,14 @@ namespace C
         
         // Uses above function to apply to grid
         void applyMatToGrid(std::vector<std::vector<std::vector<float>>>& grid, std::vector<std::vector<std::vector<float>>>& result);
+        long double crossEntropyLoss(const std::vector<std::vector<std::vector<float>>>& inputGrid, const std::vector<std::vector<std::vector<float>>>& gtMaskGrid);
+        void activateSigmoidOverChannels(std::vector<std::vector<std::vector<std::vector<float>>>>& inputChannels);
+        void activateReLUOverChannels(std::vector<std::vector<std::vector<std::vector<float>>>>& inputChannels);
+        void pool(const std::vector<std::vector<std::vector<std::vector<float>>>>& inputChannels, std::vector<std::vector<std::vector<std::vector<float>>>>& outputChannels, int poolWidth, int poolHeight, int poolDepth, int stride);
+        void backwardPool();
+        void binarySegmentation(const std::vector<std::vector<std::vector<float>>>& inputGrid, std::vector<std::vector<std::vector<float>>>& outputGrid);
 
-
+        void upsample(const std::vector<std::vector<std::vector<float>>>& inputGrid, std::vector<std::vector<std::vector<float>>>& outputGrid);
 
     };
 }

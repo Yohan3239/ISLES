@@ -54,7 +54,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     string filename_FLAIR = "C:\\Users\\yohan\\Documents\\ISLES-2022\\ISLES-2022\\sub-strokecase0115\\ses-0001\\anat\\sub-strokecase0115_ses-0001_FLAIR.nii\\sub-strokecase0115_ses-0001_FLAIR.nii";
     string filename_ADC = "C:\\Users\\yohan\\Documents\\ISLES-2022\\ISLES-2022\\sub-strokecase0115\\ses-0001\\dwi\\sub-strokecase0115_ses-0001_adc.nii\\sub-Stroke29_iso_adc_skull_stripped.nii";
     string filename_DWI = "C:\\Users\\yohan\\Documents\\ISLES-2022\\ISLES-2022\\sub-strokecase0115\\ses-0001\\dwi\\sub-strokecase0115_ses-0001_dwi.nii\\sub-Stroke29_iso_dwi_skull_stripped.nii";
-
+    string filename_MSK = "C:\\Users\\yohan\\Documents\\ISLES-2022\\ISLES-2022\\derivatives\\sub-strokecase0115\\ses-0001\\sub-strokecase0115_ses-0001_msk.nii\\sub-strokecase0115_ses-0001_msk.nii";
 
     
     // Initialise CNNetwork object from CNN class
@@ -77,8 +77,63 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     writeToLog("Completed reading FLAIR.");
     writeToLog("All channels ready for convolution. Initialising filter.");
 
-    CNNetwork.initialiseFilter()
+    // Initialising filters, 8 outputs, 3 inputs (ADC/DWI/FLAIR), 3x3x3 filter
+    CNNetwork.initialiseFilters(CNNetwork.filterChannels1, 8, 3, 3, 3, 3, true);
+    writeToLog("Filter initialised");
+    CNNetwork.initialiseFilters(CNNetwork.filterChannels2, 12, 8, 3, 3, 3, true);
+    writeToLog("Filter initialised");
+    CNNetwork.initialiseFilters(CNNetwork.filterChannels3, 16, 12, 3, 3, 3, true);
+    writeToLog("Filter initialised");
+    writeToLog("Convolution");
+    
+    // conv 1
+    CNNetwork.convolve(CNNetwork.gridChannels, CNNetwork.filterChannels1, CNNetwork.convolvedChannels1, 1, 1);
+    writeToLog("Convolution 1 complete.");
+    writeToLog("Applying ReLU function");
+    CNNetwork.activateReLUOverChannels(CNNetwork.convolvedChannels1);
+    writeToLog("Applied ReLU function.");
 
+
+    // conv 2
+    CNNetwork.convolve(CNNetwork.convolvedChannels1, CNNetwork.filterChannels2, CNNetwork.convolvedChannels2, 1, 1);
+    writeToLog("Convolution 2 complete.");
+    writeToLog("Applying ReLU function");
+    CNNetwork.activateReLUOverChannels(CNNetwork.convolvedChannels2);
+    writeToLog("Applied ReLU function.");
+    // conv 3
+    CNNetwork.convolve(CNNetwork.convolvedChannels2, CNNetwork.filterChannels3, CNNetwork.convolvedChannels3, 1, 1);
+    writeToLog("Convolution 3 complete.");
+    writeToLog("Applying ReLU function");
+    CNNetwork.activateReLUOverChannels(CNNetwork.convolvedChannels3);
+    writeToLog("Applied ReLU function.");
+    writeToLog("Pooling.");
+    CNNetwork.pool(CNNetwork.convolvedChannels3, CNNetwork.pooledChannels, 2, 2, 2, 2);
+    writeToLog("Pooling complete.");
+
+    // only need 1 output channel
+    writeToLog("Initialising output filter.");
+    CNNetwork.initialiseFilters(CNNetwork.outputFilterChannels, 1, 16, 1, 1, 1, false);
+    writeToLog("Initialised output filter.");
+    writeToLog("Final convolution.");
+    writeToLog(to_string(CNNetwork.pooledChannels.size()) + to_string(CNNetwork.pooledChannels[0].size()) + to_string(CNNetwork.pooledChannels[0][0].size()) + to_string(CNNetwork.pooledChannels[0][0][0].size()));
+    writeToLog(to_string(CNNetwork.outputFilterChannels.size()) + to_string(CNNetwork.outputFilterChannels[0].size()) + to_string(CNNetwork.outputFilterChannels[0][0].size()) + to_string(CNNetwork.outputFilterChannels[0][0][0].size()) + to_string(CNNetwork.outputFilterChannels[0][0][0][0].size()));
+    
+    
+    CNNetwork.convolve(CNNetwork.pooledChannels, CNNetwork.outputFilterChannels, CNNetwork.outputChannel, 1, 0);
+    writeToLog("Applying sigmoid function.");
+    CNNetwork.activateSigmoidOverChannels(CNNetwork.outputChannel);
+    writeToLog("Applied sigmoid function.");
+    writeToLog("Final convolution complete.");  
+    CNNetwork.upsample(CNNetwork.outputChannel[0], CNNetwork.finalUpsampledGrid);
+
+    CNNetwork.binarySegmentation(CNNetwork.outputChannel[0], CNNetwork.finalBinaryGrid);
+    
+    CNNetwork.readNifti(filename_MSK, false);
+    writeToLog("Completed reading ground truth mask.");
+
+    writeToLog(to_string(CNNetwork.crossEntropyLoss(CNNetwork.finalUpsampledGrid, CNNetwork.groundTruthGrid)));
+    // backprop
+    
 
 
     //////////////////////////////
@@ -88,152 +143,356 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     writeToLog("Y");
     writeToLog("Z");
 
-    string reply;
-    cin >> reply;
     writeToLog("Enter slice");
-    int slice;
-    cin >> slice;
-    if (reply == "X") {
-        for (int k = 0; k < CNNetwork.gridChannels.size(); ++k) {
-            writeToLog("Grid" + to_string(k) + ": ");
-            endLine();
-            for (int i = CNNetwork.gridChannels[k].size() - 1; i >= 0; --i) {
-                for (int j = 0; j < CNNetwork.gridChannels[k][0].size(); ++j) {
-                    if (CNNetwork.gridChannels[k][i][j][slice] > 0.9) {
-                        writeToLogNoLine("@");
-                    }
-                    else if (CNNetwork.gridChannels[k][i][j][slice] > 0.8) {
-                        writeToLogNoLine("%");
-                    }
-                    else if (CNNetwork.gridChannels[k][i][j][slice] > 0.7) {
-                        writeToLogNoLine("#");
-                    }
-                    else if (CNNetwork.gridChannels[k][i][j][slice] > 0.6) {
-                        writeToLogNoLine("*");
-                    }
-                    else if (CNNetwork.gridChannels[k][i][j][slice] > 0.5) {
-                        writeToLogNoLine("+");
-                    }
-                    else if (CNNetwork.gridChannels[k][i][j][slice] > 0.4) {
-                        writeToLogNoLine("=");
-                    }
-                    else if (CNNetwork.gridChannels[k][i][j][slice] > 0.3) {
-                        writeToLogNoLine("~");
-                    }
-                    else if (CNNetwork.gridChannels[k][i][j][slice] > 0.2) {
-                        writeToLogNoLine("-");
-                    }
-                    else if (CNNetwork.gridChannels[k][i][j][slice] > 0.1) {
-                        writeToLogNoLine(",");
-                    }
-                    else if (CNNetwork.gridChannels[k][i][j][slice] > 0) {
-                        writeToLogNoLine(".");
-                    }
-                    else if (CNNetwork.gridChannels[k][i][j][slice] == 0) {
-                        writeToLogNoLine(" ");
-                    }
+    int slice = 28;
+    
+    for (int k = 0; k < CNNetwork.gridChannels.size(); ++k) {
+        writeToLog("Grid" + to_string(k) + ": ");
+        endLine();
+        for (int i = CNNetwork.gridChannels[k].size() - 1; i >= 0; --i) {
+            for (int j = 0; j < CNNetwork.gridChannels[k][0].size(); ++j) {
+                if (CNNetwork.gridChannels[k][i][j][slice] > 0.9) {
+                    writeToLogNoLine("@");
                 }
-                endLine();
+                else if (CNNetwork.gridChannels[k][i][j][slice] > 0.8) {
+                    writeToLogNoLine("%");
+                }
+                else if (CNNetwork.gridChannels[k][i][j][slice] > 0.7) {
+                    writeToLogNoLine("#");
+                }
+                else if (CNNetwork.gridChannels[k][i][j][slice] > 0.6) {
+                    writeToLogNoLine("*");
+                }
+                else if (CNNetwork.gridChannels[k][i][j][slice] > 0.5) {
+                    writeToLogNoLine("+");
+                }
+                else if (CNNetwork.gridChannels[k][i][j][slice] > 0.4) {
+                    writeToLogNoLine("=");
+                }
+                else if (CNNetwork.gridChannels[k][i][j][slice] > 0.3) {
+                    writeToLogNoLine("~");
+                }
+                else if (CNNetwork.gridChannels[k][i][j][slice] > 0.2) {
+                    writeToLogNoLine("-");
+                }
+                else if (CNNetwork.gridChannels[k][i][j][slice] > 0.1) {
+                    writeToLogNoLine(",");
+                }
+                else if (CNNetwork.gridChannels[k][i][j][slice] > 0) {
+                    writeToLogNoLine(".");
+                }
+                else if (CNNetwork.gridChannels[k][i][j][slice] == 0) {
+                    writeToLogNoLine(" ");
+                }
             }
+            endLine();
         }
     }
-    else if (reply == "Y") {
-        for (int k = 0; k < CNNetwork.gridChannels.size(); ++k) {
-            writeToLog("Grid" + to_string(k) + ": ");
-            endLine();
-            for (int i = CNNetwork.gridChannels[k].size() - 1; i >= 0; --i) {
-                for (int j = 0; j < CNNetwork.gridChannels[k][0][0].size(); ++j) {
-                    if (CNNetwork.gridChannels[k][i][slice][j] > 0.9) {
-                        writeToLogNoLine("@");
-                    }
-                    else if (CNNetwork.gridChannels[k][i][slice][j] > 0.8) {
-                        writeToLogNoLine("%");
-                    }
-                    else if (CNNetwork.gridChannels[k][i][slice][j] > 0.7) {
-                        writeToLogNoLine("#");
-                    }
-                    else if (CNNetwork.gridChannels[k][i][slice][j] > 0.6) {
-                        writeToLogNoLine("*");
-                    }
-                    else if (CNNetwork.gridChannels[k][i][slice][j] > 0.5) {
-                        writeToLogNoLine("+");
-                    }
-                    else if (CNNetwork.gridChannels[k][i][slice][j] > 0.4) {
-                        writeToLogNoLine("=");
-                    }
-                    else if (CNNetwork.gridChannels[k][i][slice][j] > 0.3) {
-                        writeToLogNoLine("~");
-                    }
-                    else if (CNNetwork.gridChannels[k][i][slice][j] > 0.2) {
-                        writeToLogNoLine("-");
-                    }
-                    else if (CNNetwork.gridChannels[k][i][slice][j] > 0.1) {
-                        writeToLogNoLine(",");
-                    }
-                    else if (CNNetwork.gridChannels[k][i][slice][j] > 0) {
-                        writeToLogNoLine(".");
-                    }
-                    else if (CNNetwork.gridChannels[k][i][slice][j] == 0) {
-                        writeToLogNoLine(" ");
-                    }
+    
+
+    for (int k = 0; k < CNNetwork.gridChannels.size(); ++k) {
+        writeToLog("Grid" + to_string(k) + ": ");
+        endLine();
+        for (int i = CNNetwork.gridChannels[k].size() - 1; i >= 0; --i) {
+            for (int j = 0; j < CNNetwork.gridChannels[k][0][0].size(); ++j) {
+                if (CNNetwork.gridChannels[k][i][slice][j] > 0.9) {
+                    writeToLogNoLine("@");
                 }
-                endLine();
+                else if (CNNetwork.gridChannels[k][i][slice][j] > 0.8) {
+                    writeToLogNoLine("%");
+                }
+                else if (CNNetwork.gridChannels[k][i][slice][j] > 0.7) {
+                    writeToLogNoLine("#");
+                }
+                else if (CNNetwork.gridChannels[k][i][slice][j] > 0.6) {
+                    writeToLogNoLine("*");
+                }
+                else if (CNNetwork.gridChannels[k][i][slice][j] > 0.5) {
+                    writeToLogNoLine("+");
+                }
+                else if (CNNetwork.gridChannels[k][i][slice][j] > 0.4) {
+                    writeToLogNoLine("=");
+                }
+                else if (CNNetwork.gridChannels[k][i][slice][j] > 0.3) {
+                    writeToLogNoLine("~");
+                }
+                else if (CNNetwork.gridChannels[k][i][slice][j] > 0.2) {
+                    writeToLogNoLine("-");
+                }
+                else if (CNNetwork.gridChannels[k][i][slice][j] > 0.1) {
+                    writeToLogNoLine(",");
+                }
+                else if (CNNetwork.gridChannels[k][i][slice][j] > 0) {
+                    writeToLogNoLine(".");
+                }
+                else if (CNNetwork.gridChannels[k][i][slice][j] == 0) {
+                    writeToLogNoLine(" ");
+                }
             }
+            endLine();
         }
     }
-    else if (reply == "Z") {
-        for (int k = 0; k < CNNetwork.gridChannels.size(); ++k) {
-            writeToLog("Grid" + to_string(k) + ": ");
-            endLine();
-            for (int i = CNNetwork.gridChannels[k][0].size() - 1; i >= 0; --i) {
-                for (int j = 0; j < CNNetwork.gridChannels[k][0][0].size(); ++j) {
-                    if (CNNetwork.gridChannels[k][slice][i][j] > 0.9) {
-                        writeToLogNoLine("@");
-                    }
-                    else if (CNNetwork.gridChannels[k][slice][i][j] > 0.8) {
-                        writeToLogNoLine("%");
-                    }
-                    else if (CNNetwork.gridChannels[k][slice][i][j] > 0.7) {
-                        writeToLogNoLine("#");
-                    }
-                    else if (CNNetwork.gridChannels[k][slice][i][j] > 0.6) {
-                        writeToLogNoLine("*");
-                    }
-                    else if (CNNetwork.gridChannels[k][slice][i][j] > 0.5) {
-                        writeToLogNoLine("+");
-                    }
-                    else if (CNNetwork.gridChannels[k][slice][i][j] > 0.4) {
-                        writeToLogNoLine("=");
-                    }
-                    else if (CNNetwork.gridChannels[k][slice][i][j] > 0.3) {
-                        writeToLogNoLine("~");
-                    }
-                    else if (CNNetwork.gridChannels[k][slice][i][j] > 0.2) {
-                        writeToLogNoLine("-");
-                    }
-                    else if (CNNetwork.gridChannels[k][slice][i][j] > 0.1) {
-                        writeToLogNoLine(",");
-                    }
-                    else if (CNNetwork.gridChannels[k][slice][i][j] > 0) {
-                        writeToLogNoLine(".");
-                    }
-                    else if (CNNetwork.gridChannels[k][slice][i][j] == 0) {
-                        writeToLogNoLine(" ");
-                    }
+    
+
+    for (int k = 0; k < CNNetwork.gridChannels.size(); ++k) {
+        writeToLog("Grid" + to_string(k) + ": ");
+        endLine();
+        for (int i = CNNetwork.gridChannels[k][0].size() - 1; i >= 0; --i) {
+            for (int j = 0; j < CNNetwork.gridChannels[k][0][0].size(); ++j) {
+                if (CNNetwork.gridChannels[k][slice][i][j] > 0.9) {
+                    writeToLogNoLine("@");
                 }
-                endLine();
+                else if (CNNetwork.gridChannels[k][slice][i][j] > 0.8) {
+                    writeToLogNoLine("%");
+                }
+                else if (CNNetwork.gridChannels[k][slice][i][j] > 0.7) {
+                    writeToLogNoLine("#");
+                }
+                else if (CNNetwork.gridChannels[k][slice][i][j] > 0.6) {
+                    writeToLogNoLine("*");
+                }
+                else if (CNNetwork.gridChannels[k][slice][i][j] > 0.5) {
+                    writeToLogNoLine("+");
+                }
+                else if (CNNetwork.gridChannels[k][slice][i][j] > 0.4) {
+                    writeToLogNoLine("=");
+                }
+                else if (CNNetwork.gridChannels[k][slice][i][j] > 0.3) {
+                    writeToLogNoLine("~");
+                }
+                else if (CNNetwork.gridChannels[k][slice][i][j] > 0.2) {
+                    writeToLogNoLine("-");
+                }
+                else if (CNNetwork.gridChannels[k][slice][i][j] > 0.1) {
+                    writeToLogNoLine(",");
+                }
+                else if (CNNetwork.gridChannels[k][slice][i][j] > 0) {
+                    writeToLogNoLine(".");
+                }
+                else if (CNNetwork.gridChannels[k][slice][i][j] == 0) {
+                    writeToLogNoLine(" ");
+                }
             }
+            endLine();
+        }
+    }
+    
+
+    
+
+    for (int k = 0; k < CNNetwork.pooledChannels.size(); ++k) {
+        writeToLog("Grid" + to_string(k) + ": ");
+        endLine();
+        for (int i = CNNetwork.pooledChannels[k].size() - 1; i >= 0; --i) {
+            for (int j = 0; j < CNNetwork.pooledChannels[k][0].size(); ++j) {
+                if (CNNetwork.pooledChannels[k][i][j][slice] > 0.9) {
+                    writeToLogNoLine("@");
+                }
+                else if (CNNetwork.pooledChannels[k][i][j][slice] > 0.8) {
+                    writeToLogNoLine("%");
+                }
+                else if (CNNetwork.pooledChannels[k][i][j][slice] > 0.7) {
+                    writeToLogNoLine("#");
+                }
+                else if (CNNetwork.pooledChannels[k][i][j][slice] > 0.6) {
+                    writeToLogNoLine("*");
+                }
+                else if (CNNetwork.pooledChannels[k][i][j][slice] > 0.5) {
+                    writeToLogNoLine("+");
+                }
+                else if (CNNetwork.pooledChannels[k][i][j][slice] > 0.4) {
+                    writeToLogNoLine("=");
+                }
+                else if (CNNetwork.pooledChannels[k][i][j][slice] > 0.3) {
+                    writeToLogNoLine("~");
+                }
+                else if (CNNetwork.pooledChannels[k][i][j][slice] > 0.2) {
+                    writeToLogNoLine("-");
+                }
+                else if (CNNetwork.pooledChannels[k][i][j][slice] > 0.1) {
+                    writeToLogNoLine(",");
+                }
+                else if (CNNetwork.pooledChannels[k][i][j][slice] > 0) {
+                    writeToLogNoLine(".");
+                }
+                else if (CNNetwork.pooledChannels[k][i][j][slice] == 0) {
+                    writeToLogNoLine(" ");
+                }
+            }
+            endLine();
+        }
+    }
+
+    
+
+    for (int k = 0; k < CNNetwork.outputChannel.size(); ++k) {
+        writeToLog("Grid" + to_string(k) + ": ");
+        endLine();
+        for (int i = CNNetwork.outputChannel[k].size() - 1; i >= 0; --i) {
+            for (int j = 0; j < CNNetwork.outputChannel[k][0].size(); ++j) {
+                if (CNNetwork.outputChannel[k][i][j][slice] > 0.9) {
+                    writeToLogNoLine("@");
+                }
+                else if (CNNetwork.outputChannel[k][i][j][slice] > 0.8) {
+                    writeToLogNoLine("%");
+                }
+                else if (CNNetwork.outputChannel[k][i][j][slice] > 0.7) {
+                    writeToLogNoLine("#");
+                }
+                else if (CNNetwork.outputChannel[k][i][j][slice] > 0.6) {
+                    writeToLogNoLine("*");
+                }
+                else if (CNNetwork.outputChannel[k][i][j][slice] > 0.5) {
+                    writeToLogNoLine("+");
+                }
+                else if (CNNetwork.outputChannel[k][i][j][slice] > 0.4) {
+                    writeToLogNoLine("=");
+                }
+                else if (CNNetwork.outputChannel[k][i][j][slice] > 0.3) {
+                    writeToLogNoLine("~");
+                }
+                else if (CNNetwork.outputChannel[k][i][j][slice] > 0.2) {
+                    writeToLogNoLine("-");
+                }
+                else if (CNNetwork.outputChannel[k][i][j][slice] > 0.1) {
+                    writeToLogNoLine(",");
+                }
+                else if (CNNetwork.outputChannel[k][i][j][slice] > 0) {
+                    writeToLogNoLine(".");
+                }
+                else if (CNNetwork.outputChannel[k][i][j][slice] == 0) {
+                    writeToLogNoLine(" ");
+                }
+            }
+            endLine();
         }
     }
 
 
+    for (int i = CNNetwork.finalBinaryGrid.size() - 1; i >= 0; --i) {
+        for (int j = 0; j < CNNetwork.finalBinaryGrid[0].size(); ++j) {
+            if (CNNetwork.finalBinaryGrid[i][j][slice] > 0.9) {
+                writeToLogNoLine("@");
+            }
+            else if (CNNetwork.finalBinaryGrid[i][j][slice] > 0.8) {
+                writeToLogNoLine("%");
+            }
+            else if (CNNetwork.finalBinaryGrid[i][j][slice] > 0.7) {
+                writeToLogNoLine("#");
+            }
+            else if (CNNetwork.finalBinaryGrid[i][j][slice] > 0.6) {
+                writeToLogNoLine("*");
+            }
+            else if (CNNetwork.finalBinaryGrid[i][j][slice] > 0.5) {
+                writeToLogNoLine("+");
+            }
+            else if (CNNetwork.finalBinaryGrid[i][j][slice] > 0.4) {
+                writeToLogNoLine("=");
+            }
+            else if (CNNetwork.finalBinaryGrid[i][j][slice] > 0.3) {
+                writeToLogNoLine("~");
+            }
+            else if (CNNetwork.finalBinaryGrid[i][j][slice] > 0.2) {
+                writeToLogNoLine("-");
+            }
+            else if (CNNetwork.finalBinaryGrid[i][j][slice] > 0.1) {
+                writeToLogNoLine(",");
+            }
+            else if (CNNetwork.finalBinaryGrid[i][j][slice] > 0) {
+                writeToLogNoLine(".");
+            }
+            else if (CNNetwork.finalBinaryGrid[i][j][slice] == 0) {
+                writeToLogNoLine(" ");
+            }
+        }
+        endLine();
+    }
+    slice = 56;
 
+    writeToLog(to_string(CNNetwork.finalUpsampledGrid.size()) + to_string(CNNetwork.finalUpsampledGrid[0].size()) + to_string(CNNetwork.finalUpsampledGrid[0][0].size()));
+    for (int i = CNNetwork.finalUpsampledGrid.size() - 1; i >= 0; --i) {
+        for (int j = 0; j < CNNetwork.finalUpsampledGrid[0].size(); ++j) {
+            if (CNNetwork.finalUpsampledGrid[i][j][slice] > 0.9) {
+                writeToLogNoLine("@");
+            }
+            else if (CNNetwork.finalUpsampledGrid[i][j][slice] > 0.8) {
+                writeToLogNoLine("%");
+            }
+            else if (CNNetwork.finalUpsampledGrid[i][j][slice] > 0.7) {
+                writeToLogNoLine("#");
+            }
+            else if (CNNetwork.finalUpsampledGrid[i][j][slice] > 0.6) {
+                writeToLogNoLine("*");
+            }
+            else if (CNNetwork.finalUpsampledGrid[i][j][slice] > 0.5) {
+                writeToLogNoLine("+");
+            }
+            else if (CNNetwork.finalUpsampledGrid[i][j][slice] > 0.4) {
+                writeToLogNoLine("=");
+            }
+            else if (CNNetwork.finalUpsampledGrid[i][j][slice] > 0.3) {
+                writeToLogNoLine("~");
+            }
+            else if (CNNetwork.finalUpsampledGrid[i][j][slice] > 0.2) {
+                writeToLogNoLine("-");
+            }
+            else if (CNNetwork.finalUpsampledGrid[i][j][slice] > 0.1) {
+                writeToLogNoLine(",");
+            }
+            else if (CNNetwork.finalUpsampledGrid[i][j][slice] > 0) {
+                writeToLogNoLine(".");
+            }
+            else if (CNNetwork.finalUpsampledGrid[i][j][slice] <= 0) {
+                writeToLogNoLine("/");
+            }
+        }
+        endLine();
+    }
 
+    writeToLog(to_string(CNNetwork.groundTruthGrid.size()) + to_string(CNNetwork.groundTruthGrid[0].size()) + to_string(CNNetwork.groundTruthGrid[0][0].size()));
+    for (int i = CNNetwork.groundTruthGrid.size() - 1; i >= 0; --i) {
+        for (int j = 0; j < CNNetwork.groundTruthGrid[0].size(); ++j) {
+            if (CNNetwork.groundTruthGrid[i][j][slice] > 0.9) {
+                writeToLogNoLine("@");
+            }
+            else if (CNNetwork.groundTruthGrid[i][j][slice] > 0.8) {
+                writeToLogNoLine("%");
+            }
+            else if (CNNetwork.groundTruthGrid[i][j][slice] > 0.7) {
+                writeToLogNoLine("#");
+            }
+            else if (CNNetwork.groundTruthGrid[i][j][slice] > 0.6) {
+                writeToLogNoLine("*");
+            }
+            else if (CNNetwork.groundTruthGrid[i][j][slice] > 0.5) {
+                writeToLogNoLine("+");
+            }
+            else if (CNNetwork.groundTruthGrid[i][j][slice] > 0.4) {
+                writeToLogNoLine("=");
+            }
+            else if (CNNetwork.groundTruthGrid[i][j][slice] > 0.3) {
+                writeToLogNoLine("~");
+            }
+            else if (CNNetwork.groundTruthGrid[i][j][slice] > 0.2) {
+                writeToLogNoLine("-");
+            }
+            else if (CNNetwork.groundTruthGrid[i][j][slice] > 0.1) {
+                writeToLogNoLine(",");
+            }
+            else if (CNNetwork.groundTruthGrid[i][j][slice] > 0) {
+                writeToLogNoLine(".");
+            }
+            else if (CNNetwork.groundTruthGrid[i][j][slice] <= 0) {
+                writeToLogNoLine(" ");
+            }
+        }
+        endLine();
+    }
 
+    vector<vector<vector<float>>> _;
+    vector<vector<vector<float>>> d = {{{0.f}}};
 
-
-
-
+   
     //CODE END//
     
     // Initialize global strings
