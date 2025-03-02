@@ -49,6 +49,14 @@ namespace C
             char magic[4];
         };
 
+        struct TriLerpCache {
+            int x0, x1, y0, y1, z0, z1;
+            float xd, yd, zd;
+
+            float w000, w001, w010, w011, w100, w101, w110, w111;
+        };
+        std::vector<std::vector<std::vector<TriLerpCache>>> tlCaches;
+        std::vector<std::vector<std::vector<float>>> sigmoidCaches;
         // trying out 3 different activation functions?
         float relu(float x); // ReLU
         float sigmoid(float x); // sigmoid
@@ -69,12 +77,16 @@ namespace C
             const std::vector<std::vector<std::vector<std::vector<std::vector<float>>>>>& filterChannels, // Filters
             std::vector<std::vector<std::vector<std::vector<float>>>>& output, // Output tensor
             int stride,
-            int padding
+            int padding,
+            std::vector<float> bias
         );
-        void calcFilterGradients(const std::vector<std::vector<std::vector<std::vector<float>>>>& input, const std::vector<std::vector<std::vector<std::vector<float>>>>& lossPrevGrad, const std::vector<std::vector<std::vector<std::vector<std::vector<float>>>>>& origFilters, std::vector<std::vector<std::vector<std::vector<std::vector<float>>>>>& lossFilterGrad, int stride);
+        std::vector<float> flatten4D(const std::vector<std::vector<std::vector<std::vector<float>>>>& Initial);
+        std::vector<float> flatten5D(const std::vector<std::vector<std::vector<std::vector<std::vector<float>>>>>& Initial);
+
+        void calcFilterGradients(const std::vector<std::vector<std::vector<std::vector<float>>>>& input, const std::vector<std::vector<std::vector<std::vector<float>>>>& lossPrevGrad, const std::vector<std::vector<std::vector<std::vector<std::vector<float>>>>>& origFilters, std::vector<std::vector<std::vector<std::vector<std::vector<float>>>>>& lossFilterGrad, int padding, int stride);
         void calcBiasGradients(const std::vector<std::vector<std::vector<std::vector<float>>>>& lossPrevGrad, std::vector<float>& resultBias);
 
-        void calcInputGradients(const std::vector<std::vector<std::vector<std::vector<float>>>>& input, const std::vector<std::vector<std::vector<std::vector<float>>>>& lossPrevGrad, const std::vector<std::vector<std::vector<std::vector<std::vector<float>>>>>& origFilters, std::vector<std::vector<std::vector<std::vector<float>>>>& resultInput, int stride);
+        void calcInputGradients(const std::vector<std::vector<std::vector<std::vector<float>>>>& input, const std::vector<std::vector<std::vector<std::vector<float>>>>& lossPrevGrad, const std::vector<std::vector<std::vector<std::vector<std::vector<float>>>>>& origFilters, std::vector<std::vector<std::vector<std::vector<float>>>>& resultInputGrad, int padding, int stride);
         void rotateFilter(std::vector<std::vector<std::vector<std::vector<std::vector<float>>>>>& filters);
         // Initialise randomised filter
         void initialiseFilters(std::vector<std::vector<std::vector<std::vector<std::vector<float>>>>>& filterChannels, int numOfOutput, int numOfInput, int filterWidth, int filterHeight, int filterDepth, bool isReLU);
@@ -83,7 +95,7 @@ namespace C
         void insertGrid(const std::vector<std::vector<std::vector<float>>>& grid);
 
         // Trilinear interpolation to fix fractional coordinates after transform between voxel spaces
-        float triLerp(const std::vector<std::vector<std::vector<float>>>& inputGrid, float x, float y, float z);
+        float triLerp(const std::vector<std::vector<std::vector<float>>>& inputGrid, float x, float y, float z, TriLerpCache& tlCache);
         // Processing different datatypes of NIFTI files
         void process16NiftiData(const std::string& filename, int numVoxels, float vox_offset, float scl_slope, float scl_inter, int bitpix);
         void process64NiftiData(const std::string& filename, int numVoxels, float vox_offset, float scl_slope, float scl_inter, int bitpix);
@@ -101,6 +113,12 @@ namespace C
         std::vector<std::vector<std::vector<std::vector<std::vector<float>>>>> filterChannels1; // All filters
         std::vector<std::vector<std::vector<std::vector<std::vector<float>>>>> filterChannels2; // All filters
         std::vector<std::vector<std::vector<std::vector<std::vector<float>>>>> filterChannels3; // All filters
+
+        std::vector<float> bias1; // All biases
+        std::vector<float> bias2;
+        std::vector<float> bias3;
+        std::vector<float> finalBias;
+
         std::vector<std::vector<std::vector<std::vector<float>>>> convolvedChannels1; // Output through Convolutional layer
         std::vector<std::vector<std::vector<std::vector<float>>>> pooledChannels;
         std::vector<std::vector<std::vector<std::vector<float>>>> convolvedChannels2; // Output through Convolutional layer
@@ -115,10 +133,6 @@ namespace C
         std::vector<std::vector<std::vector<float>>> groundTruthGrid;
         std::vector<std::vector<std::vector<float>>> gradientOfLoss;
 
-        std::vector<std::vector<std::vector<float>>> gradientOfFilter;
-        std::vector<std::vector<std::vector<float>>> gradientOfWeight;
-        std::vector<std::vector<std::vector<float>>> gradientOfBias;
-        // TRANSFORM STUFF //
         // Affine Transformation Matrix (4x4)
         typedef std::vector<std::vector<float>> AffineMatrix;
 
@@ -166,10 +180,31 @@ namespace C
         void activateSigmoidOverChannels(std::vector<std::vector<std::vector<std::vector<float>>>>& inputChannels);
         void activateReLUOverChannels(std::vector<std::vector<std::vector<std::vector<float>>>>& inputChannels);
         void pool(const std::vector<std::vector<std::vector<std::vector<float>>>>& inputChannels, std::vector<std::vector<std::vector<std::vector<float>>>>& outputChannels, int poolWidth, int poolHeight, int poolDepth, int stride);
-        void backwardPool();
+        
         void binarySegmentation(const std::vector<std::vector<std::vector<float>>>& inputGrid, std::vector<std::vector<std::vector<float>>>& outputGrid);
 
         void upsample(const std::vector<std::vector<std::vector<float>>>& inputGrid, std::vector<std::vector<std::vector<float>>>& outputGrid);
+        void backwardUpsample(const std::vector<std::vector<std::vector<float>>>& outputGrad, std::vector<std::vector<std::vector<TriLerpCache>>>& CacheGrid, std::vector<std::vector<std::vector<float>>>& inputGrad);
+        void backwardSigmoid(const std::vector<std::vector<std::vector<float>>>& outputGrad, std::vector<std::vector<std::vector<float>>>& inputGrad);
+        void backwardReLU(const std::vector<std::vector<std::vector<std::vector<float>>>>& outputGrad, const std::vector<std::vector<std::vector<std::vector<float>>>>& forwardInput, std::vector<std::vector<std::vector<std::vector<float>>>>& inputGrad);
+        void backwardConvolve(const std::vector<std::vector<std::vector<std::vector<float>>>>& outputGrad, std::vector<std::vector<std::vector<std::vector<std::vector<float>>>>>& filters, std::vector<std::vector<std::vector<std::vector<float>>>>& inputGrad, std::vector<float>& bias, const std::vector<std::vector<std::vector<std::vector<float>>>>& forwardInput, const float learningRate);
+        void backwardPool(const std::vector<std::vector<std::vector<std::vector<float>>>>& outputGrad, const std::vector<std::vector<std::vector<std::vector<float>>>>& forwardInput, const std::vector<std::vector<std::vector<std::vector<float>>>>& forwardOutput, std::vector<std::vector<std::vector<std::vector<float>>>>& inputGrad, int poolDepth, int poolHeight, int poolWidth, int stride);
+        // backprop grids
+        std::vector<std::vector<std::vector<float>>> upsampleInputGrad;
+        std::vector<std::vector<std::vector<float>>> finalSigmoidInputGrad;
+        std::vector<std::vector<std::vector<std::vector<float>>>> finalConvolveInputGrad;
+        std::vector<std::vector<std::vector<std::vector<float>>>> finalPoolInputGrad;
+        std::vector<std::vector<std::vector<std::vector<float>>>> thirdReLUInputGrad;
+        std::vector<std::vector<std::vector<std::vector<float>>>> thirdConvolveInputGrad;
+        std::vector<std::vector<std::vector<std::vector<float>>>> secondReLUInputGrad;
+        std::vector<std::vector<std::vector<std::vector<float>>>> secondConvolveInputGrad;
+        std::vector<std::vector<std::vector<std::vector<float>>>> firstReLUInputGrad;
+        std::vector<std::vector<std::vector<std::vector<float>>>> firstConvolveInputGrad;
 
+        // debugging...
+        void gradSum(const std::vector<std::vector<std::vector<std::vector<float>>>> grad);
+
+
+        
     };
 }

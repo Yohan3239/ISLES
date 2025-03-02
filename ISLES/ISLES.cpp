@@ -3,6 +3,7 @@
 #include <iostream>
 #include <filesystem>
 #include <fstream>
+#include <algorithm>
 #include "framework.h"
 #include "ISLES.h"
 #include "CNN.h"
@@ -32,10 +33,145 @@ BOOL                InitInstance(HINSTANCE, int);
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
 
+static void train(string fileNum, CNN& CNNetwork, float learningRate) {
+    // file num has 0 in front remember
+    string filename_FLAIR = "C:\\Users\\yohan\\Documents\\ISLES-2022\\Extracted\\sub-strokecase" + fileNum + "_ses-0001_FLAIR.nii";
+    string filename_ADC = "C:\\Users\\yohan\\Documents\\ISLES-2022\\Extracted\\sub-strokecase" + fileNum + "_ses-0001_adc.nii";
+    string filename_DWI = "C:\\Users\\yohan\\Documents\\ISLES-2022\\Extracted\\sub-strokecase" + fileNum + "_ses-0001_dwi.nii";
+    string filename_MSK = "C:\\Users\\yohan\\Documents\\ISLES-2022\\Extracted\\sub-strokecase" + fileNum + "_ses-0001_msk.nii";
+
+
+    // Initialise CNNetwork object from CNN class
+
+    // WILL ADD FUNCTIONALITY TO ITERATE OVER ALL 200 TEST FILES i.e. 800 total, inc. mask
+    // Open ADC file
+
+
+    writeToLog(fileNum + " Input Preprocessing.");
+    //writeToLog("Trying to open ADC file at: " + filename_ADC);
+    CNNetwork.readNifti(filename_ADC, false);
+    //writeToLog("Completed reading ADC.");
+     // Clear to just set DWI file as resample target as ADC/DWI are same anyways
+
+    // Open DWI file
+    //writeToLog("Trying to open DWI file at: " + filename_DWI);
+    CNNetwork.readNifti(filename_DWI, false);
+    //writeToLog("Completed reading DWI.");
+
+    //Open FLAIR file
+    //writeToLog("Trying to open FLAIR file at: " + filename_FLAIR);
+    CNNetwork.readNifti(filename_FLAIR, true);
+    //writeToLog("Completed reading FLAIR.");
+    //writeToLog("All channels ready for convolution. Initialising filter.");
+    CNNetwork.readNifti(filename_MSK, false);
+    // Initialising filters, 8 outputs, 3 inputs (ADC/DWI/FLAIR), 3x3x3 filter
+
+
+    writeToLog(fileNum + " Forward Pass.");
+    // conv 1
+    CNNetwork.convolve(CNNetwork.gridChannels, CNNetwork.filterChannels1, CNNetwork.convolvedChannels1, 1, 1, CNNetwork.bias1);
+    writeToLog("Convolution 1 complete.");
+    //writeToLog("Applying ReLU function");
+    CNNetwork.activateReLUOverChannels(CNNetwork.convolvedChannels1);
+    //writeToLog("Applied ReLU function.");
+
+
+    // conv 2
+    CNNetwork.convolve(CNNetwork.convolvedChannels1, CNNetwork.filterChannels2, CNNetwork.convolvedChannels2, 1, 1, CNNetwork.bias2);
+    writeToLog("Convolution 2 complete.");
+    //writeToLog("Applying ReLU function");
+    CNNetwork.activateReLUOverChannels(CNNetwork.convolvedChannels2);
+    //writeToLog("Applied ReLU function.");
+    // conv 3
+    CNNetwork.convolve(CNNetwork.convolvedChannels2, CNNetwork.filterChannels3, CNNetwork.convolvedChannels3, 1, 1, CNNetwork.bias3);
+    writeToLog("Convolution 3 complete.");
+    //writeToLog("Applying ReLU function");
+    CNNetwork.activateReLUOverChannels(CNNetwork.convolvedChannels3);
+    //writeToLog("Applied ReLU function.");
+    //writeToLog("Pooling.");
+    CNNetwork.pool(CNNetwork.convolvedChannels3, CNNetwork.pooledChannels, 2, 2, 2, 2);
+    //writeToLog("Pooling complete.");
+
+    // only need 1 output channel
+    //writeToLog("Initialising output filter.");
+    
+    //writeToLog("Initialised output filter.");
+    //writeToLog("Final convolution.");
+
+    CNNetwork.convolve(CNNetwork.pooledChannels, CNNetwork.outputFilterChannels, CNNetwork.outputChannel, 1, 1, CNNetwork.finalBias);
+    //writeToLog("Applying sigmoid function.");
+    CNNetwork.activateSigmoidOverChannels(CNNetwork.outputChannel);
+    //writeToLog("Applied sigmoid function.");
+    writeToLog("Final convolution complete.");
+
+    CNNetwork.upsample(CNNetwork.outputChannel[0], CNNetwork.finalUpsampledGrid);
+    //writeToLog("Upsampled");
+
+
+
+
+    CNNetwork.binarySegmentation(CNNetwork.outputChannel[0], CNNetwork.finalBinaryGrid);
+
+  
+    
+    
+    
+    //writeToLog("Completed binary segmentation");
+    //writeToLog(to_string(CNNetwork.finalUpsampledGrid.size()));
+    //writeToLog(to_string(CNNetwork.finalUpsampledGrid[0].size()));
+    //writeToLog(to_string(CNNetwork.finalUpsampledGrid[0][0].size()));
+    //writeToLog(to_string(CNNetwork.groundTruthGrid.size()));
+    //writeToLog(to_string(CNNetwork.groundTruthGrid[0].size()));
+    //writeToLog(to_string(CNNetwork.groundTruthGrid[0][0].size()));
+    writeToEpochs("Sample " + fileNum + ". LOSS: " + to_string(CNNetwork.crossEntropyLoss(CNNetwork.finalUpsampledGrid, CNNetwork.groundTruthGrid)));
+    // backprop
+    writeToLog(fileNum + " Backward Pass.");
+    //writeToLog("Backward Upsampling...");
+    CNNetwork.backwardUpsample(CNNetwork.gradientOfLoss, CNNetwork.tlCaches, CNNetwork.upsampleInputGrad);
+    //writeToLog("Backward Sigmoiding...");
+    CNNetwork.backwardSigmoid(CNNetwork.upsampleInputGrad, CNNetwork.finalSigmoidInputGrad);
+   writeToLog("Backward Convolving...");
+
+    CNNetwork.backwardConvolve({ CNNetwork.finalSigmoidInputGrad }, CNNetwork.outputFilterChannels, CNNetwork.finalConvolveInputGrad, CNNetwork.finalBias, CNNetwork.pooledChannels, learningRate);
+    //writeToLog("Backward Pooling...");
+    CNNetwork.backwardPool(CNNetwork.finalConvolveInputGrad, CNNetwork.convolvedChannels3, CNNetwork.pooledChannels, CNNetwork.finalPoolInputGrad, 2, 2, 2, 2);
+
+    //writeToLog("Backward ReLUing...");
+    CNNetwork.backwardReLU(CNNetwork.finalPoolInputGrad, CNNetwork.convolvedChannels3, CNNetwork.thirdReLUInputGrad);
+
+
+    writeToLog("Backward Convolving...");
+    CNNetwork.backwardConvolve(CNNetwork.thirdReLUInputGrad, CNNetwork.filterChannels3, CNNetwork.thirdConvolveInputGrad, CNNetwork.bias3, CNNetwork.convolvedChannels2, learningRate);
+
+    //writeToLog("Backward ReLUing...");
+    CNNetwork.backwardReLU(CNNetwork.thirdConvolveInputGrad, CNNetwork.convolvedChannels2, CNNetwork.secondReLUInputGrad);
+    writeToLog("Backward Convolving...");
+
+    CNNetwork.backwardConvolve(CNNetwork.secondReLUInputGrad, CNNetwork.filterChannels2, CNNetwork.secondConvolveInputGrad, CNNetwork.bias2, CNNetwork.convolvedChannels1, learningRate);
+    //writeToLog("Backward ReLUing...");
+    CNNetwork.backwardReLU(CNNetwork.secondConvolveInputGrad, CNNetwork.convolvedChannels1, CNNetwork.firstReLUInputGrad);
+    writeToLog("Backward Convolving...");
+    CNNetwork.backwardConvolve(CNNetwork.firstReLUInputGrad, CNNetwork.filterChannels1, CNNetwork.firstConvolveInputGrad, CNNetwork.bias1, CNNetwork.gridChannels, learningRate);
+    
+    CNNetwork.gradSum({ CNNetwork.gradientOfLoss });
+    CNNetwork.gradSum({ CNNetwork.upsampleInputGrad });
+    CNNetwork.gradSum({ CNNetwork.finalSigmoidInputGrad });
+    CNNetwork.gradSum({ CNNetwork.finalPoolInputGrad });
+    
+
+    CNNetwork.gradSum(CNNetwork.finalConvolveInputGrad);
+    CNNetwork.gradSum(CNNetwork.thirdConvolveInputGrad);
+    CNNetwork.gradSum(CNNetwork.secondConvolveInputGrad);
+    CNNetwork.gradSum(CNNetwork.firstConvolveInputGrad);
+    
+    
+
+
+}
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
-    
+
 
 
 
@@ -50,447 +186,73 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
 
     ofstream logFile("C:\\Users\\yohan\\source\\repos\\ISLES\\log.txt", std::ios::trunc);
+    ofstream epochFile("C:\\Users\\yohan\\source\\repos\\ISLES\\Epochs.txt", std::ios::trunc);
 
-    string filename_FLAIR = "C:\\Users\\yohan\\Documents\\ISLES-2022\\ISLES-2022\\sub-strokecase0115\\ses-0001\\anat\\sub-strokecase0115_ses-0001_FLAIR.nii\\sub-strokecase0115_ses-0001_FLAIR.nii";
-    string filename_ADC = "C:\\Users\\yohan\\Documents\\ISLES-2022\\ISLES-2022\\sub-strokecase0115\\ses-0001\\dwi\\sub-strokecase0115_ses-0001_adc.nii\\sub-Stroke29_iso_adc_skull_stripped.nii";
-    string filename_DWI = "C:\\Users\\yohan\\Documents\\ISLES-2022\\ISLES-2022\\sub-strokecase0115\\ses-0001\\dwi\\sub-strokecase0115_ses-0001_dwi.nii\\sub-Stroke29_iso_dwi_skull_stripped.nii";
-    string filename_MSK = "C:\\Users\\yohan\\Documents\\ISLES-2022\\ISLES-2022\\derivatives\\sub-strokecase0115\\ses-0001\\sub-strokecase0115_ses-0001_msk.nii\\sub-strokecase0115_ses-0001_msk.nii";
+    std::unique_ptr<CNN> CNNetwork = std::make_unique<CNN>();
 
-    
-    // Initialise CNNetwork object from CNN class
-    CNN CNNetwork;
-    // WILL ADD FUNCTIONALITY TO ITERATE OVER ALL 200 TEST FILES i.e. 800 total, inc. mask
-    // Open ADC file
-    writeToLog("Trying to open ADC file at: " + filename_ADC);
-    CNNetwork.readNifti(filename_ADC, false);
-    writeToLog("Completed reading ADC.");
-    CNNetwork.clear(); // Clear to just set DWI file as resample target as ADC/DWI are same anyways
+    float learningRate = 0.000001f;
 
-    // Open DWI file
-    writeToLog("Trying to open DWI file at: " + filename_DWI);
-    CNNetwork.readNifti(filename_DWI, false);
-    writeToLog("Completed reading DWI.");
+    CNNetwork->initialiseFilters(CNNetwork->filterChannels1, 8, 3, 3, 3, 3, true);
+    CNNetwork->initialiseFilters(CNNetwork->filterChannels2, 16, 8, 3, 3, 3, true);
+    CNNetwork->initialiseFilters(CNNetwork->filterChannels3, 32, 16, 3, 3, 3, true);
+    CNNetwork->initialiseFilters(CNNetwork->outputFilterChannels, 1, 32, 1, 1, 1, false);
 
-    //Open FLAIR file
-    writeToLog("Trying to open FLAIR file at: " + filename_FLAIR);
-    CNNetwork.readNifti(filename_FLAIR, true);
-    writeToLog("Completed reading FLAIR.");
-    writeToLog("All channels ready for convolution. Initialising filter.");
+    CNNetwork->bias1.resize(8, 0.0f);
+    CNNetwork->bias2.resize(16, 0.0f);
+    CNNetwork->bias3.resize(32, 0.0f);
+    CNNetwork->finalBias.resize(1, 0.0f);
 
-    // Initialising filters, 8 outputs, 3 inputs (ADC/DWI/FLAIR), 3x3x3 filter
-    CNNetwork.initialiseFilters(CNNetwork.filterChannels1, 8, 3, 3, 3, 3, true);
-    writeToLog("Filter initialised");
-    CNNetwork.initialiseFilters(CNNetwork.filterChannels2, 12, 8, 3, 3, 3, true);
-    writeToLog("Filter initialised");
-    CNNetwork.initialiseFilters(CNNetwork.filterChannels3, 16, 12, 3, 3, 3, true);
-    writeToLog("Filter initialised");
-    writeToLog("Convolution");
-    
-    // conv 1
-    CNNetwork.convolve(CNNetwork.gridChannels, CNNetwork.filterChannels1, CNNetwork.convolvedChannels1, 1, 1);
-    writeToLog("Convolution 1 complete.");
-    writeToLog("Applying ReLU function");
-    CNNetwork.activateReLUOverChannels(CNNetwork.convolvedChannels1);
-    writeToLog("Applied ReLU function.");
-
-
-    // conv 2
-    CNNetwork.convolve(CNNetwork.convolvedChannels1, CNNetwork.filterChannels2, CNNetwork.convolvedChannels2, 1, 1);
-    writeToLog("Convolution 2 complete.");
-    writeToLog("Applying ReLU function");
-    CNNetwork.activateReLUOverChannels(CNNetwork.convolvedChannels2);
-    writeToLog("Applied ReLU function.");
-    // conv 3
-    CNNetwork.convolve(CNNetwork.convolvedChannels2, CNNetwork.filterChannels3, CNNetwork.convolvedChannels3, 1, 1);
-    writeToLog("Convolution 3 complete.");
-    writeToLog("Applying ReLU function");
-    CNNetwork.activateReLUOverChannels(CNNetwork.convolvedChannels3);
-    writeToLog("Applied ReLU function.");
-    writeToLog("Pooling.");
-    CNNetwork.pool(CNNetwork.convolvedChannels3, CNNetwork.pooledChannels, 2, 2, 2, 2);
-    writeToLog("Pooling complete.");
-
-    // only need 1 output channel
-    writeToLog("Initialising output filter.");
-    CNNetwork.initialiseFilters(CNNetwork.outputFilterChannels, 1, 16, 1, 1, 1, false);
-    writeToLog("Initialised output filter.");
-    writeToLog("Final convolution.");
-    writeToLog(to_string(CNNetwork.pooledChannels.size()) + to_string(CNNetwork.pooledChannels[0].size()) + to_string(CNNetwork.pooledChannels[0][0].size()) + to_string(CNNetwork.pooledChannels[0][0][0].size()));
-    writeToLog(to_string(CNNetwork.outputFilterChannels.size()) + to_string(CNNetwork.outputFilterChannels[0].size()) + to_string(CNNetwork.outputFilterChannels[0][0].size()) + to_string(CNNetwork.outputFilterChannels[0][0][0].size()) + to_string(CNNetwork.outputFilterChannels[0][0][0][0].size()));
-    
-    
-    CNNetwork.convolve(CNNetwork.pooledChannels, CNNetwork.outputFilterChannels, CNNetwork.outputChannel, 1, 0);
-    writeToLog("Applying sigmoid function.");
-    CNNetwork.activateSigmoidOverChannels(CNNetwork.outputChannel);
-    writeToLog("Applied sigmoid function.");
-    writeToLog("Final convolution complete.");  
-    CNNetwork.upsample(CNNetwork.outputChannel[0], CNNetwork.finalUpsampledGrid);
-
-    CNNetwork.binarySegmentation(CNNetwork.outputChannel[0], CNNetwork.finalBinaryGrid);
-    
-    CNNetwork.readNifti(filename_MSK, false);
-    writeToLog("Completed reading ground truth mask.");
-
-    writeToLog(to_string(CNNetwork.crossEntropyLoss(CNNetwork.finalUpsampledGrid, CNNetwork.groundTruthGrid)));
-    // backprop
-    
-
-
-    //////////////////////////////
-    // TO BE REWRITTEN FOR GUI!!//
-    //////////////////////////////
-    writeToLog("X for slice where X axis is const.");
-    writeToLog("Y");
-    writeToLog("Z");
-
-    writeToLog("Enter slice");
-    int slice = 28;
-    
-    for (int k = 0; k < CNNetwork.gridChannels.size(); ++k) {
-        writeToLog("Grid" + to_string(k) + ": ");
-        endLine();
-        for (int i = CNNetwork.gridChannels[k].size() - 1; i >= 0; --i) {
-            for (int j = 0; j < CNNetwork.gridChannels[k][0].size(); ++j) {
-                if (CNNetwork.gridChannels[k][i][j][slice] > 0.9) {
-                    writeToLogNoLine("@");
-                }
-                else if (CNNetwork.gridChannels[k][i][j][slice] > 0.8) {
-                    writeToLogNoLine("%");
-                }
-                else if (CNNetwork.gridChannels[k][i][j][slice] > 0.7) {
-                    writeToLogNoLine("#");
-                }
-                else if (CNNetwork.gridChannels[k][i][j][slice] > 0.6) {
-                    writeToLogNoLine("*");
-                }
-                else if (CNNetwork.gridChannels[k][i][j][slice] > 0.5) {
-                    writeToLogNoLine("+");
-                }
-                else if (CNNetwork.gridChannels[k][i][j][slice] > 0.4) {
-                    writeToLogNoLine("=");
-                }
-                else if (CNNetwork.gridChannels[k][i][j][slice] > 0.3) {
-                    writeToLogNoLine("~");
-                }
-                else if (CNNetwork.gridChannels[k][i][j][slice] > 0.2) {
-                    writeToLogNoLine("-");
-                }
-                else if (CNNetwork.gridChannels[k][i][j][slice] > 0.1) {
-                    writeToLogNoLine(",");
-                }
-                else if (CNNetwork.gridChannels[k][i][j][slice] > 0) {
-                    writeToLogNoLine(".");
-                }
-                else if (CNNetwork.gridChannels[k][i][j][slice] == 0) {
-                    writeToLogNoLine(" ");
-                }
+    for (int i = 1; i <= 100; ++i) {
+        if (i != 46 && i != 61 && i != 9 && i != 13 && i != 26 && i != 38) {
+            if (i >= 100) {
+                train("0" + to_string(i), *CNNetwork, learningRate);
             }
-            endLine();
-        }
-    }
-    
-
-    for (int k = 0; k < CNNetwork.gridChannels.size(); ++k) {
-        writeToLog("Grid" + to_string(k) + ": ");
-        endLine();
-        for (int i = CNNetwork.gridChannels[k].size() - 1; i >= 0; --i) {
-            for (int j = 0; j < CNNetwork.gridChannels[k][0][0].size(); ++j) {
-                if (CNNetwork.gridChannels[k][i][slice][j] > 0.9) {
-                    writeToLogNoLine("@");
-                }
-                else if (CNNetwork.gridChannels[k][i][slice][j] > 0.8) {
-                    writeToLogNoLine("%");
-                }
-                else if (CNNetwork.gridChannels[k][i][slice][j] > 0.7) {
-                    writeToLogNoLine("#");
-                }
-                else if (CNNetwork.gridChannels[k][i][slice][j] > 0.6) {
-                    writeToLogNoLine("*");
-                }
-                else if (CNNetwork.gridChannels[k][i][slice][j] > 0.5) {
-                    writeToLogNoLine("+");
-                }
-                else if (CNNetwork.gridChannels[k][i][slice][j] > 0.4) {
-                    writeToLogNoLine("=");
-                }
-                else if (CNNetwork.gridChannels[k][i][slice][j] > 0.3) {
-                    writeToLogNoLine("~");
-                }
-                else if (CNNetwork.gridChannels[k][i][slice][j] > 0.2) {
-                    writeToLogNoLine("-");
-                }
-                else if (CNNetwork.gridChannels[k][i][slice][j] > 0.1) {
-                    writeToLogNoLine(",");
-                }
-                else if (CNNetwork.gridChannels[k][i][slice][j] > 0) {
-                    writeToLogNoLine(".");
-                }
-                else if (CNNetwork.gridChannels[k][i][slice][j] == 0) {
-                    writeToLogNoLine(" ");
-                }
+            else if (i >= 10) {
+                train("00" + to_string(i), *CNNetwork, learningRate);
             }
-            endLine();
-        }
-    }
-    
-
-    for (int k = 0; k < CNNetwork.gridChannels.size(); ++k) {
-        writeToLog("Grid" + to_string(k) + ": ");
-        endLine();
-        for (int i = CNNetwork.gridChannels[k][0].size() - 1; i >= 0; --i) {
-            for (int j = 0; j < CNNetwork.gridChannels[k][0][0].size(); ++j) {
-                if (CNNetwork.gridChannels[k][slice][i][j] > 0.9) {
-                    writeToLogNoLine("@");
-                }
-                else if (CNNetwork.gridChannels[k][slice][i][j] > 0.8) {
-                    writeToLogNoLine("%");
-                }
-                else if (CNNetwork.gridChannels[k][slice][i][j] > 0.7) {
-                    writeToLogNoLine("#");
-                }
-                else if (CNNetwork.gridChannels[k][slice][i][j] > 0.6) {
-                    writeToLogNoLine("*");
-                }
-                else if (CNNetwork.gridChannels[k][slice][i][j] > 0.5) {
-                    writeToLogNoLine("+");
-                }
-                else if (CNNetwork.gridChannels[k][slice][i][j] > 0.4) {
-                    writeToLogNoLine("=");
-                }
-                else if (CNNetwork.gridChannels[k][slice][i][j] > 0.3) {
-                    writeToLogNoLine("~");
-                }
-                else if (CNNetwork.gridChannels[k][slice][i][j] > 0.2) {
-                    writeToLogNoLine("-");
-                }
-                else if (CNNetwork.gridChannels[k][slice][i][j] > 0.1) {
-                    writeToLogNoLine(",");
-                }
-                else if (CNNetwork.gridChannels[k][slice][i][j] > 0) {
-                    writeToLogNoLine(".");
-                }
-                else if (CNNetwork.gridChannels[k][slice][i][j] == 0) {
-                    writeToLogNoLine(" ");
-                }
+            else {
+                train("000" + to_string(i), *CNNetwork, learningRate);
             }
-            endLine();
-        }
-    }
-    
+            
+            
+            
+            vector<vector<vector<vector<vector<float>>>>> fs1 = CNNetwork->filterChannels1;
+            vector<vector<vector<vector<vector<float>>>>> fs2 = CNNetwork->filterChannels2;
+            vector<vector<vector<vector<vector<float>>>>> fs3 = CNNetwork->filterChannels3;
+            vector<vector<vector<vector<vector<float>>>>> fs4 = CNNetwork->outputFilterChannels;
 
-    
+            vector<float> b1 = CNNetwork->bias1;
+            vector<float> b2 = CNNetwork->bias2;
+            vector<float> b3 = CNNetwork->bias3;
+            vector<float> b4 = CNNetwork->finalBias;
 
-    for (int k = 0; k < CNNetwork.pooledChannels.size(); ++k) {
-        writeToLog("Grid" + to_string(k) + ": ");
-        endLine();
-        for (int i = CNNetwork.pooledChannels[k].size() - 1; i >= 0; --i) {
-            for (int j = 0; j < CNNetwork.pooledChannels[k][0].size(); ++j) {
-                if (CNNetwork.pooledChannels[k][i][j][slice] > 0.9) {
-                    writeToLogNoLine("@");
-                }
-                else if (CNNetwork.pooledChannels[k][i][j][slice] > 0.8) {
-                    writeToLogNoLine("%");
-                }
-                else if (CNNetwork.pooledChannels[k][i][j][slice] > 0.7) {
-                    writeToLogNoLine("#");
-                }
-                else if (CNNetwork.pooledChannels[k][i][j][slice] > 0.6) {
-                    writeToLogNoLine("*");
-                }
-                else if (CNNetwork.pooledChannels[k][i][j][slice] > 0.5) {
-                    writeToLogNoLine("+");
-                }
-                else if (CNNetwork.pooledChannels[k][i][j][slice] > 0.4) {
-                    writeToLogNoLine("=");
-                }
-                else if (CNNetwork.pooledChannels[k][i][j][slice] > 0.3) {
-                    writeToLogNoLine("~");
-                }
-                else if (CNNetwork.pooledChannels[k][i][j][slice] > 0.2) {
-                    writeToLogNoLine("-");
-                }
-                else if (CNNetwork.pooledChannels[k][i][j][slice] > 0.1) {
-                    writeToLogNoLine(",");
-                }
-                else if (CNNetwork.pooledChannels[k][i][j][slice] > 0) {
-                    writeToLogNoLine(".");
-                }
-                else if (CNNetwork.pooledChannels[k][i][j][slice] == 0) {
-                    writeToLogNoLine(" ");
-                }
-            }
-            endLine();
-        }
+            CNNetwork = std::make_unique<CNN>();
+
+            CNNetwork->filterChannels1 = fs1;
+            CNNetwork->filterChannels2 = fs2;
+            CNNetwork->filterChannels3 = fs3;
+            CNNetwork->outputFilterChannels = fs4;
+
+            CNNetwork->bias1 = b1;
+            CNNetwork->bias2 = b2;
+            CNNetwork->bias3 = b3;
+            CNNetwork->finalBias = b4;
+        }    
     }
 
-    
+    //CNN CNN2;
+    //CNN2.filterChannels1 = CNNetwork.filterChannels1;
+    //CNN2.filterChannels2 = CNNetwork.filterChannels2;
+    //CNN2.filterChannels3 = CNNetwork.filterChannels3;
+    //CNN2.outputFilterChannels = CNNetwork.outputFilterChannels;
 
-    for (int k = 0; k < CNNetwork.outputChannel.size(); ++k) {
-        writeToLog("Grid" + to_string(k) + ": ");
-        endLine();
-        for (int i = CNNetwork.outputChannel[k].size() - 1; i >= 0; --i) {
-            for (int j = 0; j < CNNetwork.outputChannel[k][0].size(); ++j) {
-                if (CNNetwork.outputChannel[k][i][j][slice] > 0.9) {
-                    writeToLogNoLine("@");
-                }
-                else if (CNNetwork.outputChannel[k][i][j][slice] > 0.8) {
-                    writeToLogNoLine("%");
-                }
-                else if (CNNetwork.outputChannel[k][i][j][slice] > 0.7) {
-                    writeToLogNoLine("#");
-                }
-                else if (CNNetwork.outputChannel[k][i][j][slice] > 0.6) {
-                    writeToLogNoLine("*");
-                }
-                else if (CNNetwork.outputChannel[k][i][j][slice] > 0.5) {
-                    writeToLogNoLine("+");
-                }
-                else if (CNNetwork.outputChannel[k][i][j][slice] > 0.4) {
-                    writeToLogNoLine("=");
-                }
-                else if (CNNetwork.outputChannel[k][i][j][slice] > 0.3) {
-                    writeToLogNoLine("~");
-                }
-                else if (CNNetwork.outputChannel[k][i][j][slice] > 0.2) {
-                    writeToLogNoLine("-");
-                }
-                else if (CNNetwork.outputChannel[k][i][j][slice] > 0.1) {
-                    writeToLogNoLine(",");
-                }
-                else if (CNNetwork.outputChannel[k][i][j][slice] > 0) {
-                    writeToLogNoLine(".");
-                }
-                else if (CNNetwork.outputChannel[k][i][j][slice] == 0) {
-                    writeToLogNoLine(" ");
-                }
-            }
-            endLine();
-        }
-    }
+    //CNN2.bias1 = CNNetwork.bias1;
+    //CNN2.bias2 = CNNetwork.bias2;
+    //CNN2.bias3 = CNNetwork.bias3;
+    //CNN2.finalBias = CNNetwork.finalBias;
 
+    //train("0002", CNN2, learningRate);
 
-    for (int i = CNNetwork.finalBinaryGrid.size() - 1; i >= 0; --i) {
-        for (int j = 0; j < CNNetwork.finalBinaryGrid[0].size(); ++j) {
-            if (CNNetwork.finalBinaryGrid[i][j][slice] > 0.9) {
-                writeToLogNoLine("@");
-            }
-            else if (CNNetwork.finalBinaryGrid[i][j][slice] > 0.8) {
-                writeToLogNoLine("%");
-            }
-            else if (CNNetwork.finalBinaryGrid[i][j][slice] > 0.7) {
-                writeToLogNoLine("#");
-            }
-            else if (CNNetwork.finalBinaryGrid[i][j][slice] > 0.6) {
-                writeToLogNoLine("*");
-            }
-            else if (CNNetwork.finalBinaryGrid[i][j][slice] > 0.5) {
-                writeToLogNoLine("+");
-            }
-            else if (CNNetwork.finalBinaryGrid[i][j][slice] > 0.4) {
-                writeToLogNoLine("=");
-            }
-            else if (CNNetwork.finalBinaryGrid[i][j][slice] > 0.3) {
-                writeToLogNoLine("~");
-            }
-            else if (CNNetwork.finalBinaryGrid[i][j][slice] > 0.2) {
-                writeToLogNoLine("-");
-            }
-            else if (CNNetwork.finalBinaryGrid[i][j][slice] > 0.1) {
-                writeToLogNoLine(",");
-            }
-            else if (CNNetwork.finalBinaryGrid[i][j][slice] > 0) {
-                writeToLogNoLine(".");
-            }
-            else if (CNNetwork.finalBinaryGrid[i][j][slice] == 0) {
-                writeToLogNoLine(" ");
-            }
-        }
-        endLine();
-    }
-    slice = 56;
-
-    writeToLog(to_string(CNNetwork.finalUpsampledGrid.size()) + to_string(CNNetwork.finalUpsampledGrid[0].size()) + to_string(CNNetwork.finalUpsampledGrid[0][0].size()));
-    for (int i = CNNetwork.finalUpsampledGrid.size() - 1; i >= 0; --i) {
-        for (int j = 0; j < CNNetwork.finalUpsampledGrid[0].size(); ++j) {
-            if (CNNetwork.finalUpsampledGrid[i][j][slice] > 0.9) {
-                writeToLogNoLine("@");
-            }
-            else if (CNNetwork.finalUpsampledGrid[i][j][slice] > 0.8) {
-                writeToLogNoLine("%");
-            }
-            else if (CNNetwork.finalUpsampledGrid[i][j][slice] > 0.7) {
-                writeToLogNoLine("#");
-            }
-            else if (CNNetwork.finalUpsampledGrid[i][j][slice] > 0.6) {
-                writeToLogNoLine("*");
-            }
-            else if (CNNetwork.finalUpsampledGrid[i][j][slice] > 0.5) {
-                writeToLogNoLine("+");
-            }
-            else if (CNNetwork.finalUpsampledGrid[i][j][slice] > 0.4) {
-                writeToLogNoLine("=");
-            }
-            else if (CNNetwork.finalUpsampledGrid[i][j][slice] > 0.3) {
-                writeToLogNoLine("~");
-            }
-            else if (CNNetwork.finalUpsampledGrid[i][j][slice] > 0.2) {
-                writeToLogNoLine("-");
-            }
-            else if (CNNetwork.finalUpsampledGrid[i][j][slice] > 0.1) {
-                writeToLogNoLine(",");
-            }
-            else if (CNNetwork.finalUpsampledGrid[i][j][slice] > 0) {
-                writeToLogNoLine(".");
-            }
-            else if (CNNetwork.finalUpsampledGrid[i][j][slice] <= 0) {
-                writeToLogNoLine("/");
-            }
-        }
-        endLine();
-    }
-
-    writeToLog(to_string(CNNetwork.groundTruthGrid.size()) + to_string(CNNetwork.groundTruthGrid[0].size()) + to_string(CNNetwork.groundTruthGrid[0][0].size()));
-    for (int i = CNNetwork.groundTruthGrid.size() - 1; i >= 0; --i) {
-        for (int j = 0; j < CNNetwork.groundTruthGrid[0].size(); ++j) {
-            if (CNNetwork.groundTruthGrid[i][j][slice] > 0.9) {
-                writeToLogNoLine("@");
-            }
-            else if (CNNetwork.groundTruthGrid[i][j][slice] > 0.8) {
-                writeToLogNoLine("%");
-            }
-            else if (CNNetwork.groundTruthGrid[i][j][slice] > 0.7) {
-                writeToLogNoLine("#");
-            }
-            else if (CNNetwork.groundTruthGrid[i][j][slice] > 0.6) {
-                writeToLogNoLine("*");
-            }
-            else if (CNNetwork.groundTruthGrid[i][j][slice] > 0.5) {
-                writeToLogNoLine("+");
-            }
-            else if (CNNetwork.groundTruthGrid[i][j][slice] > 0.4) {
-                writeToLogNoLine("=");
-            }
-            else if (CNNetwork.groundTruthGrid[i][j][slice] > 0.3) {
-                writeToLogNoLine("~");
-            }
-            else if (CNNetwork.groundTruthGrid[i][j][slice] > 0.2) {
-                writeToLogNoLine("-");
-            }
-            else if (CNNetwork.groundTruthGrid[i][j][slice] > 0.1) {
-                writeToLogNoLine(",");
-            }
-            else if (CNNetwork.groundTruthGrid[i][j][slice] > 0) {
-                writeToLogNoLine(".");
-            }
-            else if (CNNetwork.groundTruthGrid[i][j][slice] <= 0) {
-                writeToLogNoLine(" ");
-            }
-        }
-        endLine();
-    }
-
-    vector<vector<vector<float>>> _;
-    vector<vector<vector<float>>> d = {{{0.f}}};
 
    
     //CODE END//

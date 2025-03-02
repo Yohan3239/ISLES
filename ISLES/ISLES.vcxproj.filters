@@ -30,6 +30,7 @@
     <ClInclude Include="CNN.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="cudaFunctions.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="ISLES.cpp">
@@ -56,5 +57,9 @@
     <Text Include="log.txt">
       <Filter>Source Files</Filter>
     </Text>
+    <Text Include="Epochs.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <CudaCompile Include="cudaFunctions.cu" />
   </ItemGroup>
 </Project>
