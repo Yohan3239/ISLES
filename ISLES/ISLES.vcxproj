@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="..\packages\SFML-cpp.redist.2.5.1.1\build\native\SFML-cpp.redist.props" Condition="Exists('..\packages\SFML-cpp.redist.2.5.1.1\build\native\SFML-cpp.redist.props')" />
   <ItemGroup Label="ProjectConfigurations">
@@ -118,7 +118,7 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
-      <SubSystem>Windows</SubSystem>
+      <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
     <CudaCompile>
@@ -161,13 +161,23 @@
     <Image Include="small.ico" />
   </ItemGroup>
   <ItemGroup>
+    <Text Include="Bias_saves.txt" />
+    <Text Include="config.txt" />
     <Text Include="log.txt" />
     <Text Include="Epochs.txt" />
+    <Text Include="Filter_saves.txt" />
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="cudaFunctions.cu">
       <Include Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8\include</Include>
     </CudaCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="ADC_Input.nii" />
+    <None Include="Binary_Output.nii" />
+    <None Include="DWI_Input.nii" />
+    <None Include="FLAIR_Input.nii" />
+    <None Include="Logit_Output.nii" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

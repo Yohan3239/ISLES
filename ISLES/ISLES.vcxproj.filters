@@ -57,9 +57,33 @@
     <Text Include="log.txt">
       <Filter>Source Files</Filter>
     </Text>
-    <Text Include="Epochs.txt" />
+    <Text Include="Filter_saves.txt">
+      <Filter>Source Files</Filter>
+    </Text>
+    <Text Include="Epochs.txt">
+      <Filter>Source Files</Filter>
+    </Text>
+    <Text Include="Bias_saves.txt">
+      <Filter>Source Files</Filter>
+    </Text>
+    <Text Include="config.txt">
+      <Filter>Source Files</Filter>
+    </Text>
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="cudaFunctions.cu" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Binary_Output.nii" />
+    <None Include="Logit_Output.nii" />
+    <None Include="ADC_Input.nii">
+      <Filter>Source Files</Filter>
+    </None>
+    <None Include="DWI_Input.nii">
+      <Filter>Source Files</Filter>
+    </None>
+    <None Include="FLAIR_Input.nii">
+      <Filter>Source Files</Filter>
+    </None>
   </ItemGroup>
 </Project>

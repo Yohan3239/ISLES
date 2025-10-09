@@ -2,5 +2,3 @@
 0001 Forward Pass.
 Convolution 1 complete.
 Convolution 2 complete.
-Convolution 3 complete.
-Final convolution complete.

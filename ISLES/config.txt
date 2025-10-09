@@ -1,0 +1,10 @@
+EXTRACTED_DATA_PATH C:\\Users\\yohan\\Documents\\ISLES-2022\\Extracted\\sub-strokecase
+LOG_PATH  C:\\Users\\yohan\\source\\repos\\ISLES\\log.txt
+EPOCH_LOG_PATH C:\\Users\\yohan\\source\\repos\\ISLES\\Epochs.txt
+FILTER_SAVE_PATH C:\\Users\\yohan\\source\\repos\\ISLES\\ISLES\\Filter_saves.txt
+BIAS_SAVE_PATH C:\\Users\\yohan\\source\\repos\\ISLES\\ISLES\\Bias_saves.txt
+ADC_OUTPUT_PATH C:\\Users\\yohan\\source\\repos\\ISLES\\ISLES\\ADC_Input.nii
+DWI_OUTPUT_PATH C:\\Users\\yohan\\source\\repos\\ISLES\\ISLES\\DWI_Input.nii
+FLAIR_OUTPUT_PATH C:\\Users\\yohan\\source\\repos\\ISLES\\ISLES\\FLAIR_Input.nii
+LOGIT_OUTPUT_PATH C:\\Users\\yohan\\source\\repos\\ISLES\\ISLES\\Logit_Output.nii
+BINARY_OUTPUT_PATH C:\\Users\\yohan\\source\\repos\\ISLES\\ISLES\\Binary_Output.nii

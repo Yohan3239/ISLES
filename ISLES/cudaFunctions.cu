@@ -5,13 +5,14 @@
 
 using namespace std;
 
-__global__ void convolveKernel(
+__global__ void static convolveKernel(
     float* input, int inputNum, int depth, int height, int width,
     float* filters, int outputNum, int filterDepth, int filterHeight, int filterWidth,
     float* output, int outputDepth, int outputHeight, int outputWidth,
     float* bias, 
     int stride, int padding
 ) {
+    // Calculating global coordinates of threads
     int outChannel = blockIdx.x;
     int z = blockIdx.y * blockDim.z + threadIdx.z;
     int y = blockIdx.z * blockDim.y + threadIdx.y;
@@ -29,66 +30,56 @@ __global__ void convolveKernel(
 
                     // Only compute if within bounds
                     if (inputZ >= 0 && inputZ < depth && inputY >= 0 && inputY < height && inputX >= 0 && inputX < width) {
-                        // Multiply and sum the product of filter and input value
                         
+                        // Multiply and sum the product of filter and input value
                         sum += input[((inChannel * depth + inputZ) * height + inputY) * width + inputX] * filters[(((outChannel * inputNum + inChannel) * filterDepth + fz) * filterHeight + fy) * filterWidth + fx];
                     }
                 }
             }
         }
     }
-    output[((outChannel * outputDepth + z) * outputHeight + y) * outputWidth + x] = sum + bias[outChannel];
+    // Atomic Add to prevent race conditions
+    atomicAdd(&output[((outChannel * outputDepth + z) * outputHeight + y) * outputWidth + x], sum + bias[outChannel]);
 }
 
-__global__ void calcInputGradKernel(float* input, int origFilterInNum, int inputDepth, int inputHeight, int inputWidth,
+__global__ void static calcInputGradKernel(float* input, int origFilterInNum, int inputDepth, int inputHeight, int inputWidth,
     float* lossPrevGrad, int origFilterOutNum, //same dim as input bc same padding
     float* rotatedFilters, int origFilterDepth, int origFilterHeight, int origFilterWidth,
     float* resultInputGrad, // same dim as input
     int padding,
     int stride) {
-
+    // Calculating global coordinate of threads
     int ic = blockIdx.x;
     int z = blockIdx.y * blockDim.z + threadIdx.z;
     int y = blockIdx.z * blockDim.y + threadIdx.y;
     int x = threadIdx.x;
 
-    int gz_min = max(0, int(ceilf((float)(z - origFilterDepth + 1) / stride)));
-    int gz_max = min(inputDepth - 1, z / stride);
-
-    int gy_min = max(0, int(ceilf((float)(y - origFilterHeight + 1) / stride)));
-    int gy_max = min(inputHeight - 1, y / stride);
-
-    int gx_min = max(0, int(ceilf((float)(x - origFilterWidth + 1) / stride)));
-    int gx_max = min(inputWidth - 1, x / stride);
-
     float sum = 0.f;
     for (int oc = 0; oc < origFilterOutNum; ++oc) {
-        // Loop over each element in the filter spatially.
+        // Loop over each element in filters
         for (int fz = 0; fz < origFilterDepth; ++fz) {
             for (int fy = 0; fy < origFilterHeight; ++fy) {
                 for (int fx = 0; fx < origFilterWidth; ++fx) {
-                    // In the forward pass (with same padding), the input voxel (z, y, x)
-                    // is affected by an output voxel at:
-                    // out_z = (z + padding - fz) / stride, provided (z + padding - fz) is divisible by stride,
-                    // and similarly for y and x.
-                    int out_z = z + padding - fz;
+                    // out_z = (z + padding - fz) / stride, similarly for x and y.
+                    int out_z = z + padding - fz; 
                     int out_y = y + padding - fy;
                     int out_x = x + padding - fx;
 
                     // Check if these coordinates align with the stride.
                     if ((out_z % stride == 0) && (out_y % stride == 0) && (out_x % stride == 0)) {
-                        out_z /= stride;
+                        out_z /= stride; // Undoing the z * stride - padding + fz
                         out_y /= stride;
                         out_x /= stride;
 
-                        // For same padding, we assume the output dims equal the input dims.
+                        // For same padding, assume the output dim = input dim
                         if (out_z >= 0 && out_z < inputDepth &&
                             out_y >= 0 && out_y < inputHeight &&
                             out_x >= 0 && out_x < inputWidth)
                         {
-                            int inputSlice = inputHeight * inputWidth;
+                            int inputSlice = inputHeight * inputWidth; // Values calculated once so no need to do it twice in indexing
                             int filterVol = origFilterDepth * origFilterHeight * origFilterWidth;
 
+                            // Dot product of output gradient with the rotated filters
                             sum += lossPrevGrad[oc * inputDepth * inputSlice + out_z * inputSlice + out_y * inputWidth + out_x] *
                                 rotatedFilters[oc * (origFilterInNum * filterVol) + ic * filterVol + fz * (origFilterHeight * origFilterWidth) + fy * origFilterWidth + fx];
                         }
@@ -98,40 +89,37 @@ __global__ void calcInputGradKernel(float* input, int origFilterInNum, int input
         }
     }
 
-    // Write the accumulated sum into the result for input voxel (ic, z, y, x).
+    // Write sum into tensor
     int inputVol = inputDepth * inputHeight * inputWidth;
-    resultInputGrad[ic * inputVol + z * (inputHeight * inputWidth) + y * inputWidth + x] = sum;
-
-   
+    // Atomic add to prevent race conditions
+    atomicAdd(&resultInputGrad[ic * inputVol + z * inputHeight * inputWidth + y * inputWidth + x], sum);
 }
 
-__global__ void calcFilterGradKernel(float* input, int origFilterInNum, int inputDepth, int inputHeight, int inputWidth,
+__global__ void static calcFilterGradKernel(float* input, int origFilterInNum, int inputDepth, int inputHeight, int inputWidth,
     float* lossPrevGrad, int origFilterOutNum, //same dim as input bc same padding
     float* rotatedFilters, int origFilterDepth, int origFilterHeight, int origFilterWidth,
     float* resultGrad, // same dim as input
     int padding,
     int stride) {
-
-
     
     int oc = blockIdx.x;
     int ic = blockIdx.y;
 
     int totalThreads = origFilterHeight * origFilterWidth;
-    int nBlocksPerDepth = ceil(float(totalThreads) / 1024);
-    int depthIndex = blockIdx.z / nBlocksPerDepth; 
-    int blockIdxWithinDepth = blockIdx.z % nBlocksPerDepth; 
+    int blocksPerDepth = ceil(float(totalThreads) / 1024); // How many blocks there should be for one depth representation
+    int depthIndex = blockIdx.z / blocksPerDepth;
+    int blockIdxInDepth = blockIdx.z % blocksPerDepth; // Which number the block is in the depth group
 
-    int threadID = threadIdx.y * blockDim.x + threadIdx.x; 
-    int filterElementIndex = blockIdxWithinDepth * (blockDim.x * blockDim.y) + threadID;
+    int threadIDX = threadIdx.y * blockDim.x + threadIdx.x; // 1D index of the thread computed from the filter slice
+    int filterIdx = blockIdxInDepth * (blockDim.x * blockDim.y) + threadIDX; // index of which filter weight the thread is processing
 
-    if (filterElementIndex >= totalThreads) {
+    if (filterIdx >= totalThreads) { // return if filterIdx is too large
         return;
     }
 
     int z = depthIndex;
-    int y = filterElementIndex / origFilterWidth;  
-    int x = filterElementIndex % origFilterWidth;  
+    int y = filterIdx / origFilterWidth;
+    int x = filterIdx % origFilterWidth;
 
     
 
@@ -143,43 +131,52 @@ __global__ void calcFilterGradKernel(float* input, int origFilterInNum, int inpu
                 int zCord = stride * gz + z - padding;
                 int yCord = stride * gy + y - padding;
                 int xCord = stride * gx + x - padding;
-                if (zCord >= 0 && zCord < inputDepth &&
+                if (zCord >= 0 && zCord < inputDepth && // 
                     yCord >= 0 && yCord < inputHeight &&
                     xCord >= 0 && xCord < inputWidth) {
+                    // Dot products of gradient with input
                     sum += lossPrevGrad[oc * inputDepth * inputHeight * inputWidth + gz * inputHeight * inputWidth + gy * inputWidth + gx] * input[ic * inputDepth * inputHeight * inputWidth + zCord * inputHeight * inputWidth + yCord * inputWidth + xCord];
-                } // gonna assume same-padding bc otherwise overcomplicated
+                } 
 
 
             }
         }
     }
-    resultGrad[oc * (origFilterInNum * origFilterDepth * origFilterHeight * origFilterWidth) + ic * (origFilterDepth * origFilterHeight * origFilterWidth) + z * (origFilterHeight * origFilterWidth) + y * origFilterWidth + x] = sum;
+    // Again, atomic add
+    atomicAdd(&resultGrad[oc * (origFilterInNum * origFilterDepth * origFilterHeight * origFilterWidth) 
+        + ic * (origFilterDepth * origFilterHeight * origFilterWidth) 
+        + z * (origFilterHeight * origFilterWidth) 
+        + y * origFilterWidth + x], sum);
 }
 
 
 
-void convolveHost(
+bool convolveHost(
     float* input, int inputNum, int depth, int height, int width, 
     float* filters, int outputNum, int filterDepth, int filterHeight, int filterWidth, // skip inputNum bc same
     float* output, int outputDepth, int outputHeight, int outputWidth, // skip outnputNum bc same
     float* bias, 
     int stride, int padding
 ) {
+ 
+    size_t freeMem, totalMem;
+    cudaMemGetInfo(&freeMem, &totalMem); // Used for debugging
+    //cout << "Free Memory before allocation: " << freeMem << " / " << totalMem << " bytes\n";
+    size_t inputAllocSize = inputNum * depth * height * width * sizeof(float); // Amount of memory to be allocated
+    size_t filterAllocSize = outputNum * inputNum * filterDepth * filterHeight * filterWidth * sizeof(float); 
+    size_t outputAllocSize = outputNum * outputDepth * outputHeight * outputWidth * sizeof(float);
+    size_t biasAllocSize = outputNum * sizeof(float);
 
-    int inputAllocSize = inputNum * depth * height * width * sizeof(float);
-    int filterAllocSize = outputNum * inputNum * filterDepth * filterHeight * filterWidth * sizeof(float);
-    int outputAllocSize = outputNum * outputDepth * outputHeight * outputWidth * sizeof(float);
-    int biasAllocSize = outputNum * sizeof(float);
+    dim3 gridDim(outputNum, outputDepth, outputHeight); // oc/depth/height
+    dim3 blockDim(outputWidth, 1, 1); // width
 
-    dim3 gridDim(outputNum, outputDepth, outputHeight);
-    dim3 blockDim(outputWidth, 1, 1);
 
-    float* inputHostPinned = nullptr; // must initialise or segmentation fault ...
-    float* filterHostPinned = nullptr;
+    float* inputHostPinned = nullptr;  // Pinned memory of host (CPU)
+    float* filterHostPinned = nullptr;// must initialise or segmentation fault ...
     float* outputHostPinned = nullptr;
     float* biasHostPinned = nullptr;
 
-    float* inputDeviceData;
+    float* inputDeviceData; // Device data (GPU data)
     float* filterDeviceData;
     float* outputDeviceData;
     float* biasDeviceData;
@@ -187,37 +184,86 @@ void convolveHost(
     cudaStream_t stream;
     cudaStreamCreate(&stream);
 
-    cudaMallocHost((void**)&inputHostPinned, inputAllocSize);
-    cudaMallocHost((void**)&filterHostPinned, filterAllocSize);
-    cudaMallocHost((void**)&outputHostPinned, outputAllocSize);
-    cudaMallocHost((void**)&biasHostPinned, biasAllocSize);
+    cudaError_t mallocError;
+    // Allocate memory to host with corresponding size
+    mallocError = cudaMallocHost((void**)&inputHostPinned, inputAllocSize); 
+    // Check for error in memory allocation and return
+    if (mallocError != cudaSuccess) { 
+        cerr << "Error: CUDA memory allocation failure: " << cudaGetErrorString(mallocError) << "\n";
+        return false;
+    }
+    mallocError = cudaMallocHost((void**)&filterHostPinned, filterAllocSize);
+    if (mallocError != cudaSuccess) {
+        cerr << "Error: CUDA memory allocation failure: " << cudaGetErrorString(mallocError) << "\n";
+        return false;
+    }
+    mallocError = cudaMallocHost((void**)&outputHostPinned, outputAllocSize);
+    if (mallocError != cudaSuccess) {
+        cerr << "Error: CUDA memory allocation failure: " << cudaGetErrorString(mallocError) << "\n";
+        return false;
+    }
+    mallocError = cudaMallocHost((void**)&biasHostPinned, biasAllocSize);
+    if (mallocError != cudaSuccess) {
+        cerr << "Error: CUDA memory allocation failure: " << cudaGetErrorString(mallocError) << "\n";
+        return false;
+    }
 
-    cudaMalloc(&biasDeviceData, biasAllocSize);
-    cudaMalloc(&inputDeviceData, inputAllocSize);
-    cudaMalloc(&filterDeviceData, filterAllocSize);
-    cudaMalloc(&outputDeviceData, outputAllocSize);
-    //data transfers
+    mallocError = cudaMalloc(&biasDeviceData, biasAllocSize); // Allocate memory to device with corresponding size
+    if (mallocError != cudaSuccess) {
+        cerr << "Error: CUDA memory allocation failure: " << cudaGetErrorString(mallocError) << "\n";
+        return false;
+    }
+    mallocError = cudaMalloc(&inputDeviceData, inputAllocSize);
+    if (mallocError != cudaSuccess) {
+        cerr << "Error: CUDA memory allocation failure: " << cudaGetErrorString(mallocError) << "\n";
+        return false;
+    }
+    mallocError = cudaMalloc(&filterDeviceData, filterAllocSize);
+    if (mallocError != cudaSuccess) {
+        cerr << "Error: CUDA memory allocation failure: " << cudaGetErrorString(mallocError) << "\n";
+        return false;
+    }
+    mallocError = cudaMalloc(&outputDeviceData, outputAllocSize);
+    if (mallocError != cudaSuccess) {
+        cerr << "Error: CUDA memory allocation failure: " << cudaGetErrorString(mallocError) << "\n";
+        return false;
+    }
+
+    // Data copy from input to host memory
     memcpy(inputHostPinned, input, inputAllocSize);
     memcpy(filterHostPinned, filters, filterAllocSize);
     memcpy(biasHostPinned, bias, biasAllocSize);
     
+    // Data copy from host memory to device memory
     cudaMemcpyAsync(inputDeviceData, inputHostPinned, inputAllocSize, cudaMemcpyHostToDevice, stream);
     cudaMemcpyAsync(filterDeviceData, filterHostPinned, filterAllocSize, cudaMemcpyHostToDevice, stream);
     cudaMemcpyAsync(biasDeviceData, biasHostPinned, biasAllocSize, cudaMemcpyHostToDevice, stream);
 
+    // Run main kernel
     convolveKernel<<<gridDim, blockDim>>>(inputDeviceData, inputNum, depth, height, width,
         filterDeviceData, outputNum, filterDepth, filterHeight, filterWidth, // skip inputNum bc same
         outputDeviceData, outputDepth, outputHeight, outputWidth, // skip outnputNum bc same
         biasDeviceData,
         stride, padding);
     
-    cudaMemcpyAsync(outputHostPinned, outputDeviceData, outputAllocSize, cudaMemcpyDeviceToHost, stream);
+    // Error checking
+    cudaError_t error = cudaGetLastError();
+    if (error != cudaSuccess) {
+        cerr << "Error: CUDA kernel failed: " << cudaGetErrorString(error) << "\n";
+        return false;
+    }
 
+    // Sync all device threads before copying
+    cudaDeviceSynchronize();
+    // Copy from device to host
+    cudaMemcpyAsync(outputHostPinned, outputDeviceData, outputAllocSize, cudaMemcpyDeviceToHost, stream);
+    // Sync stream
     cudaStreamSynchronize(stream);
 
+    // Copy from host to output
     memcpy(output, outputHostPinned, outputAllocSize);
 
-
+    // Free allocated memory
     cudaFree(inputDeviceData);
     cudaFree(filterDeviceData);
     cudaFree(outputDeviceData);
@@ -228,23 +274,31 @@ void convolveHost(
     cudaFreeHost(outputHostPinned);
     cudaFreeHost(biasHostPinned);
 
+    // Destroy stream
     cudaStreamDestroy(stream);
+    
+    cudaMemGetInfo(&freeMem, &totalMem);
+    //cout << "Free Memory after deallocation: " << freeMem << " / " << totalMem << " bytes\n";
+    return true;
 }
 
 
-void calcInputGradHost(float* input, int origFilterInNum, int inputDepth, int inputHeight, int inputWidth,
+bool calcInputGradHost(float* input, int origFilterInNum, int inputDepth, int inputHeight, int inputWidth,
     float* lossPrevGrad, int origFilterOutNum, //same dim as input bc same padding
     float* rotatedFilters, int origFilterDepth, int origFilterHeight, int origFilterWidth,
     float* resultInputGrad, // same dim as input
     int padding,
     int stride) {
+    
+    size_t freeMem, totalMem; // Used for debugging memory leaks
+    cudaMemGetInfo(&freeMem, &totalMem);
+    //cout << "Free Memory before allocation: " << freeMem << " / " << totalMem << " bytes\n";
+    size_t inputAllocSize = origFilterInNum * inputDepth * inputHeight * inputWidth * sizeof(float);
+    size_t filterAllocSize = origFilterOutNum * origFilterInNum * origFilterDepth * origFilterHeight * origFilterWidth * sizeof(float);
+    size_t lossPrevGradAllocSize = origFilterOutNum * inputDepth * inputHeight * inputWidth * sizeof(float);
+    size_t resultInputGradAllocSize = inputAllocSize; // Same size because same-padding
 
-    int inputAllocSize = origFilterInNum * inputDepth * inputHeight * inputWidth * sizeof(float);
-    int filterAllocSize = origFilterOutNum * origFilterInNum * origFilterDepth * origFilterHeight * origFilterWidth * sizeof(float);
-    int lossPrevGradAllocSize = origFilterOutNum * inputDepth * inputHeight * inputWidth * sizeof(float);
-    int resultInputGradAllocSize = inputAllocSize; // exactly same size bc ye
-
-    dim3 gridDim(origFilterInNum, inputDepth, inputHeight);
+    dim3 gridDim(origFilterInNum, inputDepth, inputHeight); 
     dim3 blockDim(inputWidth, 1, 1);
 
     float* inputHostPinned = nullptr;
@@ -260,15 +314,48 @@ void calcInputGradHost(float* input, int origFilterInNum, int inputDepth, int in
     cudaStream_t stream;
     cudaStreamCreate(&stream);
 
-    cudaMallocHost((void**)&inputHostPinned, inputAllocSize);
-    cudaMallocHost((void**)&filterHostPinned, filterAllocSize);
-    cudaMallocHost((void**)&lossPrevGradHostPinned, lossPrevGradAllocSize);
-    cudaMallocHost((void**)&resultInputGradHostPinned, resultInputGradAllocSize);
+    cudaError_t mallocError;
+    mallocError = cudaMallocHost((void**)&inputHostPinned, inputAllocSize);
+    if (mallocError != cudaSuccess) {
+        cerr << "Error: CUDA memory allocation failure: " << cudaGetErrorString(mallocError) << "\n";
+        return false;
+    }
+    mallocError = cudaMallocHost((void**)&filterHostPinned, filterAllocSize);
+    if (mallocError != cudaSuccess) {
+        cerr << "Error: CUDA memory allocation failure: " << cudaGetErrorString(mallocError) << "\n";
+        return false;
+    }
+    mallocError = cudaMallocHost((void**)&lossPrevGradHostPinned, lossPrevGradAllocSize);
+    if (mallocError != cudaSuccess) {
+        cerr << "Error: CUDA memory allocation failure: " << cudaGetErrorString(mallocError) << "\n";
+        return false;
+    }
+    mallocError = cudaMallocHost((void**)&resultInputGradHostPinned, resultInputGradAllocSize);
+    if (mallocError != cudaSuccess) {
+        cerr << "Error: CUDA memory allocation failure: " << cudaGetErrorString(mallocError) << "\n";
+        return false;
+    }
 
-    cudaMalloc(&inputDeviceData, inputAllocSize);
-    cudaMalloc(&filterDeviceData, filterAllocSize);
-    cudaMalloc(&lossPrevGradDeviceData, lossPrevGradAllocSize);
-    cudaMalloc(&resultInputGradDeviceData, resultInputGradAllocSize);
+    mallocError = cudaMalloc(&inputDeviceData, inputAllocSize);
+    if (mallocError != cudaSuccess) {
+        cerr << "Error: CUDA memory allocation failure: " << cudaGetErrorString(mallocError) << "\n";
+        return false;
+    }
+    mallocError = cudaMalloc(&filterDeviceData, filterAllocSize);
+    if (mallocError != cudaSuccess) {
+        cerr << "Error: CUDA memory allocation failure: " << cudaGetErrorString(mallocError) << "\n";
+        return false;
+    }
+    mallocError = cudaMalloc(&lossPrevGradDeviceData, lossPrevGradAllocSize);
+    if (mallocError != cudaSuccess) {
+        cerr << "Error: CUDA memory allocation failure: " << cudaGetErrorString(mallocError) << "\n";
+        return false;
+    }
+    mallocError = cudaMalloc(&resultInputGradDeviceData, resultInputGradAllocSize);
+    if (mallocError != cudaSuccess) {
+        cerr << "Error: CUDA memory allocation failure: " << cudaGetErrorString(mallocError) << "\n";
+        return false;
+    }
 
     memcpy(inputHostPinned, input, inputAllocSize);
     memcpy(filterHostPinned, rotatedFilters, filterAllocSize);
@@ -277,14 +364,18 @@ void calcInputGradHost(float* input, int origFilterInNum, int inputDepth, int in
     cudaMemcpyAsync(inputDeviceData, inputHostPinned, inputAllocSize, cudaMemcpyHostToDevice, stream);
     cudaMemcpyAsync(filterDeviceData, filterHostPinned, filterAllocSize, cudaMemcpyHostToDevice, stream);
     cudaMemcpyAsync(lossPrevGradDeviceData, lossPrevGradHostPinned, lossPrevGradAllocSize, cudaMemcpyHostToDevice, stream);
-
+    
     calcInputGradKernel<<<gridDim, blockDim, 0, stream>>>(inputDeviceData, origFilterInNum, inputDepth, inputHeight, inputWidth,
-        lossPrevGradDeviceData, origFilterOutNum, //same dim as input bc same padding
+        lossPrevGradDeviceData, origFilterOutNum, 
         filterDeviceData, origFilterDepth, origFilterHeight, origFilterWidth,
-        resultInputGradDeviceData, // same dim as input
+        resultInputGradDeviceData,
         padding,
         stride);
-
+    cudaError_t error = cudaGetLastError();
+    if (error != cudaSuccess) {
+        cerr << "Error: CUDA kernel failed: " << cudaGetErrorString(error) << "\n";
+        return false;
+    }
     cudaMemcpyAsync(resultInputGradHostPinned, resultInputGradDeviceData, resultInputGradAllocSize, cudaMemcpyDeviceToHost, stream);
 
     cudaStreamSynchronize(stream);
@@ -302,28 +393,35 @@ void calcInputGradHost(float* input, int origFilterInNum, int inputDepth, int in
     cudaFreeHost(resultInputGradHostPinned);
 
     cudaStreamDestroy(stream);
-
+    
+    cudaMemGetInfo(&freeMem, &totalMem);
+    //cout << "Free Memory after deallocation: " << freeMem << " / " << totalMem << " bytes\n";
+    return true;
 }
 
-void calcFilterGradHost(float* input, int origFilterInNum, int inputDepth, int inputHeight, int inputWidth,
+bool calcFilterGradHost(float* input, int origFilterInNum, int inputDepth, int inputHeight, int inputWidth,
     float* lossPrevGrad, int origFilterOutNum, //same dim as input bc same padding
     float* rotatedFilters, int origFilterDepth, int origFilterHeight, int origFilterWidth,
     float* resultGrad, // same dim as input
     int padding,
     int stride) {
+    
+    size_t freeMem, totalMem; // Used for debugging memory leaks
+    cudaMemGetInfo(&freeMem, &totalMem);
+    //cout << "Free Memory before allocation: " << freeMem << " / " << totalMem << " bytes\n";
+    
+    size_t inputAllocSize = origFilterInNum * inputDepth * inputHeight * inputWidth * sizeof(float);
+    size_t filterAllocSize = origFilterOutNum * origFilterInNum * origFilterDepth * origFilterHeight * origFilterWidth * sizeof(float);
+    size_t lossPrevGradAllocSize = origFilterOutNum * inputDepth * inputHeight * inputWidth * sizeof(float);
+    size_t resultFilterGradAllocSize = filterAllocSize; // Same size because same-padding
 
-    unsigned long inputAllocSize = origFilterInNum * inputDepth * inputHeight * inputWidth * sizeof(float);
-    unsigned long filterAllocSize = origFilterOutNum * origFilterInNum * origFilterDepth * origFilterHeight * origFilterWidth * sizeof(float);
-    unsigned long lossPrevGradAllocSize = origFilterOutNum * inputDepth * inputHeight * inputWidth * sizeof(float);
-    unsigned long resultFilterGradAllocSize = filterAllocSize; // exactly same size bc ye
+    int totalThreads = origFilterHeight * origFilterWidth; // Total amount of threads per block
+    int maxThreads = min(1024, totalThreads); // Actual amount of threads used per block
+    int blockH = min(origFilterHeight, maxThreads); // Height of each block
+    int blockW = max(1, maxThreads / blockH); // Width of each block. 1 if unnecessary
 
-    int totalThreads = origFilterHeight * origFilterWidth;
-    int maxThreads = min(1024, totalThreads);
-    int blockH = min(origFilterHeight, maxThreads);
-    int blockW = max(1, maxThreads / blockH);
-
-    dim3 blockDim(blockH, blockW, 1);
     dim3 gridDim(origFilterOutNum, origFilterInNum, origFilterDepth * ceil(float(totalThreads) / 1024));
+    dim3 blockDim(blockH, blockW, 1);
 
     float* inputHostPinned = nullptr;
     float* filterHostPinned = nullptr;
@@ -338,39 +436,80 @@ void calcFilterGradHost(float* input, int origFilterInNum, int inputDepth, int i
     cudaStream_t stream;
     cudaStreamCreate(&stream);
 
-    cudaMallocHost((void**)&inputHostPinned, inputAllocSize);
-    cudaMallocHost((void**)&filterHostPinned, filterAllocSize);
-    cudaMallocHost((void**)&lossPrevGradHostPinned, lossPrevGradAllocSize);
-    cudaMallocHost((void**)&resultFilterGradHostPinned, resultFilterGradAllocSize);
+    cudaError_t mallocError;
+    mallocError = cudaMallocHost((void**)&inputHostPinned, inputAllocSize);
+    if (mallocError != cudaSuccess) {
+        cerr << "Error: CUDA memory allocation failure: " << cudaGetErrorString(mallocError) << "\n";
+        return false;
+    }
+    mallocError = cudaMallocHost((void**)&filterHostPinned, filterAllocSize);
+    if (mallocError != cudaSuccess) {
+        cerr << "Error: CUDA memory allocation failure: " << cudaGetErrorString(mallocError) << "\n";
+        return false;
+    }
+    mallocError = cudaMallocHost((void**)&lossPrevGradHostPinned, lossPrevGradAllocSize);
+    if (mallocError != cudaSuccess) {
+        cerr << "Error: CUDA memory allocation failure: " << cudaGetErrorString(mallocError) << "\n";
+        return false;
+    }
+    mallocError = cudaMallocHost((void**)&resultFilterGradHostPinned, resultFilterGradAllocSize);
+    if (mallocError != cudaSuccess) {
+        cerr << "Error: CUDA memory allocation failure: " << cudaGetErrorString(mallocError) << "\n";
+        return false;
+    }
+    
+    mallocError = cudaMalloc(&inputDeviceData, inputAllocSize);
+    if (mallocError != cudaSuccess) {
+        cerr << "Error: CUDA memory allocation failure: " << cudaGetErrorString(mallocError) << "\n";
+        return false;
+    }
+    mallocError = cudaMalloc(&filterDeviceData, filterAllocSize);
+    if (mallocError != cudaSuccess) {
+        cerr << "Error: CUDA memory allocation failure: " << cudaGetErrorString(mallocError) << "\n";
+        return false;
+    }
+    mallocError = cudaMalloc(&lossPrevGradDeviceData, lossPrevGradAllocSize);
+    if (mallocError != cudaSuccess) {
+        cerr << "Error: CUDA memory allocation failure: " << cudaGetErrorString(mallocError) << "\n";
+        return false;
+    }
+    mallocError = cudaMalloc(&resultFilterGradDeviceData, resultFilterGradAllocSize);
+    if (mallocError != cudaSuccess) {
+        cerr << "Error: CUDA memory allocation failure: " << cudaGetErrorString(mallocError) << "\n";
+        return false;
+    }
 
     
-    cudaMalloc(&inputDeviceData, inputAllocSize);
-    cudaMalloc(&filterDeviceData, filterAllocSize);
-    cudaMalloc(&lossPrevGradDeviceData, lossPrevGradAllocSize);
-    cudaMalloc(&resultFilterGradDeviceData, resultFilterGradAllocSize);
-
    
     memcpy(inputHostPinned, input, inputAllocSize);
+    
     memcpy(filterHostPinned, rotatedFilters, filterAllocSize);
+    
     memcpy(lossPrevGradHostPinned, lossPrevGrad, lossPrevGradAllocSize);
-
+    
+    
     cudaMemcpyAsync(inputDeviceData, inputHostPinned, inputAllocSize, cudaMemcpyHostToDevice, stream);
     cudaMemcpyAsync(filterDeviceData, filterHostPinned, filterAllocSize, cudaMemcpyHostToDevice, stream);
     cudaMemcpyAsync(lossPrevGradDeviceData, lossPrevGradHostPinned, lossPrevGradAllocSize, cudaMemcpyHostToDevice, stream);
-
+    
     calcFilterGradKernel<<<gridDim, blockDim, 0, stream >>> (inputDeviceData, origFilterInNum, inputDepth, inputHeight, inputWidth,
         lossPrevGradDeviceData, origFilterOutNum, //same dim as input bc same padding
         filterDeviceData, origFilterDepth, origFilterHeight, origFilterWidth,
         resultFilterGradDeviceData, // same dim as input
         padding,
         stride);
-
+    
+    cudaError_t error = cudaGetLastError();
+    if (error != cudaSuccess) {
+        cerr << "Error: CUDA kernel failed: " << cudaGetErrorString(error) << "\n";
+        return false;
+    }
     cudaMemcpyAsync(resultFilterGradHostPinned, resultFilterGradDeviceData, resultFilterGradAllocSize, cudaMemcpyDeviceToHost, stream);
-
+   
     cudaStreamSynchronize(stream);
 
     memcpy(resultGrad, resultFilterGradHostPinned, resultFilterGradAllocSize);
-
+    
     cudaFree(inputDeviceData);
     cudaFree(filterDeviceData);
     cudaFree(lossPrevGradDeviceData);
@@ -382,5 +521,8 @@ void calcFilterGradHost(float* input, int origFilterInNum, int inputDepth, int i
     cudaFreeHost(resultFilterGradHostPinned);
 
     cudaStreamDestroy(stream);
-
+    cudaMemGetInfo(&freeMem, &totalMem);
+    //cout << "Free Memory after deallocation: " << freeMem << " / " << totalMem << " bytes\n";
+    return true;
 }
+
