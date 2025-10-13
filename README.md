@@ -9,7 +9,7 @@ CUDA-accelerated forward and backward propagation
 
 Composite loss function: Tversky + Focal for class imbalance handling
 
-LeakyReLU and tanh activations implemented from scratch
+LeakyReLU and sigmoid activations implemented from scratch
 
 Affine transformations for multi-modality MRI registration
 
