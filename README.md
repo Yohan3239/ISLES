@@ -15,6 +15,8 @@ Affine transformations for multi-modality MRI registration
 
 3D volumetric output reconstruction with voxel-level accuracy metrics
 
+[![DEMO:][(https://img.youtube.com/vi/<VIDEO_ID>/0.jpg)](https://youtu.be/<VIDEO_ID>](https://youtu.be/II0lLBmuz-k))
+
 **Dataset**
 
 ISLES 2022 Dataset: 250 MRI cases (FLAIR, DWI, ADC + ground truth masks)
@@ -25,3 +27,4 @@ Data normalised, registered via affine transformations, and augmented (rotation,
 MIT License
 
 Copyright (c) 2025 Yohan Lee
+
