@@ -15,7 +15,7 @@ Affine transformations for multi-modality MRI registration
 
 3D volumetric output reconstruction with voxel-level accuracy metrics
 
-[![DEMO:][(https://img.youtube.com/vi/<VIDEO_ID>/0.jpg)](https://youtu.be/<VIDEO_ID>](https://youtu.be/II0lLBmuz-k))
+[![DEMO:][https://youtu.be/II0lLBmuz-k]
 
 **Dataset**
 
